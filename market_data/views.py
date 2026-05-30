@@ -1,3 +1,4 @@
+from django.core.management import call_command
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -21,5 +22,38 @@ class RealtimeDashboardView(APIView):
                 "usd_krw": latest_by_symbol["USDKRW"],
                 "domestic_avg_gasoline_krw": latest_by_symbol["DOMESTIC_GASOLINE_AVG"],
                 "message": "저장된 최신 시장 데이터 기반 응답입니다.",
+            }
+        )
+
+
+class DashboardRefreshView(APIView):
+    def post(self, request):
+        steps = [
+            ("collect_market_data", "market_data"),
+            ("generate_forecast", "forecast"),
+            ("generate_briefing", "briefing"),
+        ]
+        results = {}
+
+        for command_name, result_key in steps:
+            try:
+                call_command(command_name)
+                results[result_key] = "ok"
+            except Exception as exc:
+                results[result_key] = "failed"
+                return Response(
+                    {
+                        "message": "최신 데이터 갱신에 실패했습니다.",
+                        "failed_step": result_key,
+                        "error": str(exc),
+                        "results": results,
+                    },
+                    status=500,
+                )
+
+        return Response(
+            {
+                "message": "최신 데이터 갱신이 완료되었습니다.",
+                "results": results,
             }
         )
