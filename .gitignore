@@ -64,48 +64,16 @@ plus_work.md
 README.md
 
 
-
-
-
-frontend/
 alerts/
+briefing/
 config/
+forecast/
+market_data/
 docs/
+manage.py
+requirements.txt
 Dockerfile.backend
 docker-compose.yml
-manage.py
-plus_work.md
-README.md
-
-백엔드 일반 로직을 AI 업로드에서 제외하고 싶을 때
-market_data/views.py
-market_data/models.py
-market_data/admin.py
-market_data/apps.py
-market_data/urls.py
-market_data/scheduler.py
-market_data/management/
-market_data/migrations/
-market_data/services/collectors.py
-market_data/services/freshness.py
-forecast/models.py
-forecast/admin.py
-forecast/apps.py
-forecast/urls.py
-forecast/tests.py
-forecast/management/
-forecast/migrations/
-forecast/services/purchase_score.py
-forecast/services/evaluation.py
-forecast/services/generator.py
-briefing/views.py
-briefing/models.py
-briefing/admin.py
-briefing/apps.py
-briefing/urls.py
-briefing/management/
-briefing/migrations/
-
-
+db.sqlite3
 
 
