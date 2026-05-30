@@ -59,21 +59,9 @@ checkpoints/
 !.vscode/extensions.json
 *.swp
 *.swo
-
-plus_work.md
-README.md
-
-
-alerts/
-briefing/
-config/
-forecast/
-market_data/
 docs/
-manage.py
-requirements.txt
-Dockerfile.backend
-docker-compose.yml
-db.sqlite3
+
+
+
 
 
