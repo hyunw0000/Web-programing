@@ -90,8 +90,11 @@ def collect_opinet_points() -> List[MarketPoint]:
         if not product_code or avg_price in (None, ""):
             continue
 
-        # B027(휘발유)를 대시보드 핵심 지표로 우선 저장.
-        symbol = "DOMESTIC_GASOLINE_AVG" if product_code == "B027" else "OPINET_" + product_code
+        # 제품별 심볼 매핑
+        if product_code == "B027":
+            symbol = "DOMESTIC_GASOLINE_AVG"
+        else:
+            symbol = "OPINET_" + product_code
         try:
             value = Decimal(str(avg_price))
         except Exception:
@@ -110,85 +113,63 @@ def collect_opinet_points() -> List[MarketPoint]:
     return points
 
 
-def _news_sentiment_score(title: str, description: str) -> int:
-    text = (title + " " + description).lower()
-    positive_words = ["감산", "긴장", "불안", "제재", "공급 차질", "급등", "상승"]
-    negative_words = ["증산", "안정", "완화", "휴전", "공급 확대", "급락", "하락"]
-
-    score = 0
-    for word in positive_words:
-        if word in text:
-            score += 1
-    for word in negative_words:
-        if word in text:
-            score -= 1
-    return score
-
-
-def collect_naver_news_sentiment_point() -> List[MarketPoint]:
-    client_id = os.getenv("NAVER_CLIENT_ID")
-    client_secret = os.getenv("NAVER_CLIENT_SECRET")
-    if not client_id or not client_secret:
+def collect_alphavantage_news_sentiment() -> List[MarketPoint]:
+    api_key = os.getenv("ALPHA_VANTAGE_API_KEY")
+    if not api_key:
         return []
 
-    headers = {
-        "X-Naver-Client-Id": client_id,
-        "X-Naver-Client-Secret": client_secret,
-    }
+    url = "https://www.alphavantage.co/query"
     params = {
-        "query": "유가 OR 석유 OR 중동 정세",
-        "display": 20,
-        "sort": "date",
+        "function": "NEWS_SENTIMENT",
+        "topics": "energy",
+        "limit": 20,
+        "apikey": api_key,
     }
 
     try:
-        response = requests.get(
-            "https://openapi.naver.com/v1/search/news.json",
-            headers=headers,
-            params=params,
-            timeout=10,
-        )
+        response = requests.get(url, params=params, timeout=15)
         response.raise_for_status()
         payload = response.json()
     except Exception:
         return []
 
-    items = payload.get("items", [])
-    if not items:
+    feed = payload.get("feed", [])
+    if not feed:
         return []
 
-    now_utc = datetime.now(timezone.utc)
-    metadata = {"news_count": len(items)}
-
-    if is_configured():
-        gemini_score = score_news_items(items)
-        if gemini_score is not None:
-            metadata["sentiment_method"] = "gemini"
-            return [
-                MarketPoint(
-                    source="news",
-                    symbol="NEWS_SENTIMENT_SCORE",
-                    value=Decimal(str(gemini_score)),
-                    unit="score",
-                    observed_at=now_utc,
-                    metadata=metadata,
-                )
-            ]
-
     scores = []
-    for item in items:
-        scores.append(_news_sentiment_score(item.get("title", ""), item.get("description", "")))
+    news_items = []
+    for article in feed:
+        score = article.get("overall_sentiment_score")
+        if score is not None:
+            scores.append(float(score))
+            news_items.append({
+                "title": article.get("title"),
+                "summary": article.get("summary"),
+                "sentiment_score": score,
+                "url": article.get("url")
+            })
 
-    avg_score = Decimal(str(round(sum(scores) / len(scores), 4)))
-    metadata["sentiment_method"] = "keyword_fallback"
+    if not scores:
+        return []
+
+    avg_score = sum(scores) / len(scores)
+    mapped_score = Decimal(str(round(avg_score * 3.0, 4)))
+
+    now_utc = datetime.now(timezone.utc)
     return [
         MarketPoint(
-            source="news",
+            source="alphavantage",
             symbol="NEWS_SENTIMENT_SCORE",
-            value=avg_score,
+            value=mapped_score,
             unit="score",
             observed_at=now_utc,
-            metadata=metadata,
+            metadata={
+                "article_count": len(feed),
+                "raw_avg_score": round(avg_score, 4),
+                "news_items": news_items, # Gemini 분석용 데이터
+                "method": "alphavantage_news_sentiment"
+            },
         )
     ]
 

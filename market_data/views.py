@@ -1,9 +1,30 @@
+import yfinance as yf
 from django.core.management import call_command
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from .models import RawMarketData
 from .services.freshness import ensure_market_data_fresh
+from .services import gemini_client
+
+
+class ChatView(APIView):
+    def post(self, request):
+        user_message = request.data.get("message")
+        if not user_message:
+            return Response({"error": "메시지를 입력해주세요."}, status=400)
+
+        wti = RawMarketData.objects.filter(symbol="WTI").order_by("-observed_at").first()
+        domestic = RawMarketData.objects.filter(symbol="DOMESTIC_GASOLINE_AVG").order_by("-observed_at").first()
+        
+        context = {
+            "wti": float(wti.value) if wti else "unknown",
+            "domestic": float(domestic.value) if domestic else "unknown",
+            "sentiment": "neutral",
+        }
+
+        ai_response = gemini_client.chat_with_data(user_message, context)
+        return Response({"response": ai_response})
 
 
 class RealtimeDashboardView(APIView):
@@ -57,3 +78,39 @@ class DashboardRefreshView(APIView):
                 "results": results,
             }
         )
+
+
+class HistoricalDataView(APIView):
+    def get(self, request):
+        symbol = request.query_params.get("symbol")
+        start_date = request.query_params.get("start_date")
+        end_date = request.query_params.get("end_date")
+        
+        if not symbol:
+            return Response({"error": "Symbol is required"}, status=400)
+            
+        yf_mapping = {"WTI": "CL=F", "BRENT": "BZ=F", "USDKRW": "USDKRW=X"}
+
+        if symbol in yf_mapping:
+            try:
+                ticker = yf.Ticker(yf_mapping[symbol])
+                hist = ticker.history(start=start_date, end=end_date)
+                results = [
+                    {"date": index.strftime("%Y-%m-%d"), "value": round(float(row["Close"]), 2)}
+                    for index, row in hist.iterrows()
+                ]
+                return Response({"symbol": symbol, "history": results})
+            except Exception:
+                pass
+
+        # DB 필터링
+        queryset = RawMarketData.objects.filter(symbol=symbol)
+        if start_date:
+            queryset = queryset.filter(observed_at__date__gte=start_date)
+        if end_date:
+            queryset = queryset.filter(observed_at__date__lte=end_date)
+            
+        data = queryset.order_by("-observed_at")
+        results = [{"date": entry.observed_at.strftime("%Y-%m-%d"), "value": float(entry.value)} for entry in data]
+        
+        return Response({"symbol": symbol, "history": results[::-1]})

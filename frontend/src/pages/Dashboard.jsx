@@ -1,876 +1,452 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState, useRef } from 'react'
+import { Link } from 'react-router-dom'
 import '../App.css'
 
 function ForecastChart({ rows, formatNumber }) {
+  const chartRef = useRef(null)
+  const [dimensions, setDimensions] = useState({ width: 600, height: 260 })
+  const [hovered, setHovered] = useState(null)
+
+  useEffect(() => {
+    const updateSize = () => {
+      if (chartRef.current) setDimensions({ width: chartRef.current.offsetWidth, height: 260 })
+    }
+    updateSize()
+    window.addEventListener('resize', updateSize)
+    return () => window.removeEventListener('resize', updateSize)
+  }, [])
+
   const chart = useMemo(() => {
     const normalized = rows
       .map((row) => ({
-        ...row,
-        predicted: Number(row.baseline_predicted_price ?? row.predicted_price),
-        newsAdjusted: Number(row.news_adjusted_predicted_price ?? row.predicted_price),
-        lower: Number(row.lower_bound),
-        upper: Number(row.upper_bound),
+        date: row.target_date,
+        day: `D+${row.horizon_days}`,
+        base: Number(row.baseline_predicted_price ?? row.predicted_price),
+        news: Number(row.news_adjusted_predicted_price ?? row.predicted_price),
       }))
-      .filter((row) => (
-        Number.isFinite(row.predicted)
-        && Number.isFinite(row.newsAdjusted)
-        && Number.isFinite(row.lower)
-        && Number.isFinite(row.upper)
-      ))
+      .filter((row) => Number.isFinite(row.base))
 
-    if (normalized.length === 0) {
-      return null
-    }
+    if (normalized.length === 0) return null
 
-    const width = 620
-    const height = 210
-    const padding = { top: 20, right: 22, bottom: 42, left: 54 }
-    const minValue = Math.min(...normalized.flatMap((row) => [row.lower, row.newsAdjusted]))
-    const maxValue = Math.max(...normalized.flatMap((row) => [row.upper, row.newsAdjusted]))
-    const valueRange = maxValue - minValue || 1
+    const { width, height } = dimensions
+    const padding = { top: 40, right: 20, bottom: 40, left: 60 }
+    const minVal = Math.min(...normalized.flatMap(r => [r.base, r.news]))
+    const maxVal = Math.max(...normalized.flatMap(r => [r.base, r.news]))
+    const range = (maxVal - minVal) * 1.5 || 10
+    const min = minVal - (range - (maxVal - minVal)) / 2
+    
     const innerWidth = width - padding.left - padding.right
     const innerHeight = height - padding.top - padding.bottom
-    const xStep = normalized.length > 1 ? innerWidth / (normalized.length - 1) : 0
-
-    const pointFor = (row, value, index) => {
-      const x = padding.left + (normalized.length > 1 ? index * xStep : innerWidth / 2)
-      const y = padding.top + ((maxValue - value) / valueRange) * innerHeight
-      return { x, y, row, value }
-    }
-
-    const predictedPoints = normalized.map((row, index) => pointFor(row, row.predicted, index))
-    const newsAdjustedPoints = normalized.map((row, index) => pointFor(row, row.newsAdjusted, index))
-    const upperPoints = normalized.map((row, index) => pointFor(row, row.upper, index))
-    const lowerPoints = normalized.map((row, index) => pointFor(row, row.lower, index))
-    const bandPoints = [...upperPoints, ...lowerPoints.slice().reverse()]
-      .map((point) => `${point.x},${point.y}`)
-      .join(' ')
-    const linePoints = predictedPoints.map((point) => `${point.x},${point.y}`).join(' ')
-    const newsLinePoints = newsAdjustedPoints.map((point) => `${point.x},${point.y}`).join(' ')
+    const groupGap = innerWidth / (normalized.length || 1)
 
     return {
-      width,
-      height,
-      padding,
-      minValue,
-      maxValue,
-      predictedPoints,
-      newsAdjustedPoints,
-      bandPoints,
-      linePoints,
-      newsLinePoints,
+      width, height, min, range, innerHeight, padding,
+      bars: normalized.map((r, i) => {
+        const x = padding.left + i * groupGap + (groupGap / 2 - 15)
+        return {
+          ...r,
+          x,
+          baseX: x,
+          newsX: x + 15,
+          hBase: ((r.base - min) / range) * innerHeight,
+          hNews: ((r.news - min) / range) * innerHeight
+        }
+      })
     }
-  }, [rows])
+  }, [rows, dimensions])
 
-  if (!chart) {
-    return null
-  }
+  if (!chart) return <p className="text-dim">데이터 분석 중...</p>
 
   return (
-    <div className="forecast-chart" aria-label="단기 가격 예측 차트">
-      <div className="chart-legend">
-        <span><i className="legend-line baseline" />유가 예측 추세</span>
-        <span><i className="legend-line news" />뉴스 공시 포함 예측</span>
+    <div ref={chartRef} style={{ width: '100%', marginTop: '20px', position: 'relative' }}>
+      <div className="chart-legend" style={{ display: 'flex', gap: '20px', fontSize: '0.75rem', marginBottom: '20px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}><div style={{ width: '12px', height: '12px', background: 'var(--primary)' }} /> 기본 예측</div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}><div style={{ width: '12px', height: '12px', background: 'var(--warning)' }} /> 뉴스 반영</div>
       </div>
-      <svg viewBox={`0 0 ${chart.width} ${chart.height}`} role="img">
-        <line
-          x1={chart.padding.left}
-          y1={chart.padding.top}
-          x2={chart.padding.left}
-          y2={chart.height - chart.padding.bottom}
-          className="chart-axis"
-        />
-        <line
-          x1={chart.padding.left}
-          y1={chart.height - chart.padding.bottom}
-          x2={chart.width - chart.padding.right}
-          y2={chart.height - chart.padding.bottom}
-          className="chart-axis"
-        />
-        <text x="8" y={chart.padding.top + 4} className="chart-label">
-          {formatNumber(chart.maxValue, 0)}
-        </text>
-        <text x="8" y={chart.height - chart.padding.bottom} className="chart-label">
-          {formatNumber(chart.minValue, 0)}
-        </text>
-        <polygon points={chart.bandPoints} className="chart-band" />
-        <polyline points={chart.linePoints} className="chart-line" />
-        <polyline points={chart.newsLinePoints} className="chart-line-news" />
-        {chart.predictedPoints.map((point) => (
-          <g key={point.row.horizon_days}>
-            <circle cx={point.x} cy={point.y} r="4.5" className="chart-point" />
-            <text x={point.x} y={chart.height - 14} textAnchor="middle" className="chart-label">
-              D+{point.row.horizon_days}
-            </text>
+      
+      <svg width="100%" height={chart.height} viewBox={`0 0 ${chart.width} ${chart.height}`} style={{ overflow: 'visible' }}>
+        {[0, 0.5, 1].map(p => {
+          const val = chart.min + (p * chart.range)
+          const y = chart.height - chart.padding.bottom - (p * chart.innerHeight)
+          return (
+            <g key={p}>
+              <text x={chart.padding.left - 10} y={y + 4} textAnchor="end" fill="var(--text-dim)" fontSize="10">{val.toFixed(0)}</text>
+              <line x1={chart.padding.left} y1={y} x2={chart.width - chart.padding.right} y2={y} stroke="var(--border)" strokeDasharray="4" />
+            </g>
+          )
+        })}
+
+        {chart.bars.map((b, i) => (
+          <g key={i} onMouseEnter={() => setHovered(b)} onMouseLeave={() => setHovered(null)} style={{ cursor: 'pointer' }}>
+            <rect x={b.baseX} y={chart.height - b.hBase - chart.padding.bottom} width={15} height={b.hBase} fill="var(--primary)" rx="1" />
+            <rect x={b.newsX} y={chart.height - b.hNews - chart.padding.bottom} width={15} height={b.hNews} fill="var(--warning)" rx="1" />
+            <text x={b.baseX + 15} y={chart.height - 20} textAnchor="middle" fill="var(--text-dim)" fontSize="10">{b.day}</text>
           </g>
         ))}
-        {chart.newsAdjustedPoints.map((point) => (
-          <circle
-            key={`news-${point.row.horizon_days}`}
-            cx={point.x}
-            cy={point.y}
-            r="4"
-            className="chart-point-news"
-          />
-        ))}
+
+        {hovered && (
+          <g transform={`translate(${hovered.x}, ${chart.height - Math.max(hovered.hBase, hovered.hNews) - chart.padding.bottom - 50})`}>
+            <rect width="120" height="45" rx="6" fill="var(--bg-card)" stroke="var(--primary)" />
+            <text x="60" y="20" textAnchor="middle" fill="#fff" fontSize="11" fontWeight="800">{hovered.day} 상세</text>
+            <text x="5" y="38" fill="var(--primary)" fontSize="10">기본: {hovered.base.toLocaleString()}</text>
+            <text x="65" y="38" fill="var(--warning)" fontSize="10">뉴스: {hovered.news.toLocaleString()}</text>
+          </g>
+        )}
       </svg>
     </div>
   )
 }
 
-function Dashboard() {
-  const apiBaseUrl = useMemo(
-    () => import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000',
-    [],
+function SideDrawer({ isOpen, onClose }) {
+  return (
+    <div style={{
+      position: 'fixed', top: 0, left: isOpen ? 0 : '-400px', width: '400px', height: '100%',
+      background: 'var(--bg-card)', borderRight: '1px solid var(--border)', zIndex: 1000,
+      transition: 'left 0.3s ease', padding: '40px', boxShadow: '10px 0 30px rgba(0,0,0,0.5)'
+    }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '30px' }}>
+        <h2 style={{ color: '#fff' }}>점수 산정 원리</h2>
+        <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'var(--text-dim)', cursor: 'pointer', fontSize: '1.2rem' }}>✕</button>
+      </div>
+      <p style={{ color: 'var(--text-muted)', marginBottom: '20px' }}>Purchase Score는 단기/중기 가격 예측치를 가중 평균하여 산출된 0~100점 지표입니다.</p>
+      
+      <div className="card" style={{ background: 'var(--bg-input)', padding: '20px', marginBottom: '20px' }}>
+        <h4 style={{ color: 'var(--primary)', marginBottom: '10px' }}>산식</h4>
+        <p style={{ fontSize: '0.85rem', color: '#fff' }}>Score = 50 + (예측 변동폭 × 2.5)</p>
+      </div>
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <div style={{ width: '12px', height: '12px', borderRadius: '50%', background: 'var(--success)' }} />
+          <span style={{ fontWeight: 700, color: '#fff' }}>70점 이상 (오늘 구매)</span>
+        </div>
+        <p style={{ fontSize: '0.8rem', color: 'var(--text-dim)', marginLeft: '22px' }}>단기 상승 가능성이 높아 오늘 선구매가 유리합니다.</p>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <div style={{ width: '12px', height: '12px', borderRadius: '50%', background: 'var(--warning)' }} />
+          <span style={{ fontWeight: 700, color: '#fff' }}>40~69점 (분할 구매)</span>
+        </div>
+        <p style={{ fontSize: '0.8rem', color: 'var(--text-dim)', marginLeft: '22px' }}>가격 방향성이 혼조세입니다. 리스크 관리를 위해 나누어 구매하세요.</p>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <div style={{ width: '12px', height: '12px', borderRadius: '50%', background: 'var(--danger)' }} />
+          <span style={{ fontWeight: 700, color: '#fff' }}>40점 이하 (관망)</span>
+        </div>
+        <p style={{ fontSize: '0.8rem', color: 'var(--text-dim)', marginLeft: '22px' }}>가격 하락 가능성이 있어 관망 전략이 유리합니다.</p>
+      </div>
+    </div>
   )
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState('')
-  const [realtime, setRealtime] = useState(null)
-  const [forecast, setForecast] = useState([])
-  const [forecastInfo, setForecastInfo] = useState(null)
-  const [briefing, setBriefing] = useState(null)
-  const [purchaseScore, setPurchaseScore] = useState(null)
-  const [alertRules, setAlertRules] = useState([])
-  const [alertHistory, setAlertHistory] = useState([])
-  const [newRule, setNewRule] = useState({ name: '', rule_type: 'rise', threshold: '' })
-  const [alertFormMessage, setAlertFormMessage] = useState('')
-  const [evaluatingAlerts, setEvaluatingAlerts] = useState(false)
-  const [refreshingData, setRefreshingData] = useState(false)
-  const [tankLevel, setTankLevel] = useState(30)
+}
 
-  const loadDashboard = useCallback(async (showLoading = true) => {
-    if (showLoading) {
-      setLoading(true)
-    }
-    setError('')
+function ChatPanel({ apiBaseUrl }) {
+  const [messages, setMessages] = useState([
+    { role: 'ai', text: '안녕하세요! 오일 프리딕트 AI입니다. 유가 전망에 대해 무엇이든 물어보세요.' }
+  ])
+  const [input, setInput] = useState('')
+  const [loading, setLoading] = useState(false)
+  const scrollRef = useRef(null)
+
+  useEffect(() => {
+    if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight
+  }, [messages])
+
+  const onSend = async (e) => {
+    e.preventDefault()
+    if (!input.trim() || loading) return
+    const msg = input.trim()
+    setInput('')
+    setMessages(prev => [...prev, { role: 'user', text: msg }])
+    setLoading(true)
     try {
-      const [realtimeRes, forecastRes, briefingRes, purchaseScoreRes, alertRulesRes, alertHistoryRes] = await Promise.all([
-        fetch(`${apiBaseUrl}/api/v1/dashboard/realtime`),
-        fetch(`${apiBaseUrl}/api/v1/forecast?horizon=7d`),
-        fetch(`${apiBaseUrl}/api/v1/briefings/latest`),
-        fetch(`${apiBaseUrl}/api/v1/purchase-score`),
-        fetch(`${apiBaseUrl}/api/v1/alerts/rules`),
-        fetch(`${apiBaseUrl}/api/v1/alerts/history`),
-      ])
-
-      if (
-        !realtimeRes.ok
-        || !forecastRes.ok
-        || !briefingRes.ok
-        || !purchaseScoreRes.ok
-        || !alertRulesRes.ok
-        || !alertHistoryRes.ok
-      ) {
-        throw new Error('서버 응답에 실패했습니다.')
-      }
-
-      const realtimeJson = await realtimeRes.json()
-      const forecastJson = await forecastRes.json()
-      const briefingJson = await briefingRes.json()
-      const purchaseScoreJson = await purchaseScoreRes.json()
-      const alertRulesJson = await alertRulesRes.json()
-      const alertHistoryJson = await alertHistoryRes.json()
-
-      setRealtime(realtimeJson)
-      setForecast(forecastJson.predictions || [])
-      setForecastInfo({
-        newsSentimentScore: forecastJson.news_sentiment_score,
-        newsAdjustmentMethod: forecastJson.news_adjustment_method,
+      const res = await fetch(`${apiBaseUrl}/api/v1/chat`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: msg })
       })
-      setBriefing(briefingJson)
-      setPurchaseScore(purchaseScoreJson)
-      setAlertRules(alertRulesJson)
-      setAlertHistory(alertHistoryJson)
+      const data = await res.json()
+      setMessages(prev => [...prev, { role: 'ai', text: data.response }])
+    } catch {
+      setMessages(prev => [...prev, { role: 'ai', text: '서버 연결에 실패했습니다.' }])
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <article className="card chat-card">
+      <div className="chat-header">AI Market Assistant</div>
+      <div className="chat-messages" ref={scrollRef}>
+        {messages.map((m, i) => (
+          <div key={i} className={m.role === 'ai' ? 'msg-ai' : 'msg-user'}>{m.text}</div>
+        ))}
+        {loading && <div className="text-dim" style={{ fontSize: '0.8rem' }}>AI 분석 중...</div>}
+      </div>
+      <form className="chat-input" onSubmit={onSend}>
+        <input value={input} onChange={e => setInput(e.target.value)} placeholder="메시지를 입력하세요..." />
+        <button type="submit" className="btn-primary">전송</button>
+      </form>
+    </article>
+  )
+}
+
+function ChatDrawer({ isOpen, onClose, apiBaseUrl }) {
+  return (
+    <div style={{
+      position: 'fixed', top: 0, right: isOpen ? 0 : '-400px', width: '400px', height: '100%',
+      background: 'var(--bg-card)', borderLeft: '1px solid var(--border)', zIndex: 1000,
+      transition: 'right 0.3s ease', boxShadow: '-10px 0 30px rgba(0,0,0,0.5)'
+    }}>
+      <div style={{ padding: '24px', display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--border)' }}>
+        <h2 style={{ color: '#fff', fontSize: '1.2rem' }}>AI Market Assistant</h2>
+        <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'var(--text-dim)', cursor: 'pointer', fontSize: '1.2rem' }}>✕</button>
+      </div>
+      <div style={{ height: 'calc(100% - 160px)', overflowY: 'auto', padding: '20px' }}>
+        <ChatPanel apiBaseUrl={apiBaseUrl} />
+      </div>
+    </div>
+  )
+}
+
+function Dashboard() {
+  const [isDrawerOpen, setIsDrawerOpen] = useState(false)
+  const [isChatOpen, setIsChatOpen] = useState(false)
+  const [historicalData, setHistoricalData] = useState({ symbol: null, history: [] })
+  const [historyDays, setHistoryDays] = useState(30)
+  
+  const apiBaseUrl = useMemo(() => import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000', [])
+  const [loading, setLoading] = useState(true)
+  const [data, setData] = useState({ realtime: null, forecast: [], briefing: null, purchaseScore: null })
+
+  const [chartData, setChartData] = useState([])
+  const [chartTitle, setChartTitle] = useState('Price Forecast')
+  const [isHistorical, setIsHistorical] = useState(false)
+
+  const loadData = useCallback(async () => {
+    setLoading(true)
+    try {
+      // 1. 트리거: 시장 데이터 수집 -> 예측 생성 -> 브리핑 생성
+      await fetch(`${apiBaseUrl}/api/v1/dashboard/refresh`, { method: 'POST' })
+      
+      // 2. 대시보드 데이터 조회
+      const endpoints = ['dashboard/realtime', 'forecast?horizon=7d', 'briefings/latest', 'purchase-score']
+      const res = await Promise.all(endpoints.map(e => fetch(`${apiBaseUrl}/api/v1/${e}`).then(r => r.json())))
+      
+      setData({ realtime: res[0], forecast: res[1].predictions || [], briefing: res[2], purchaseScore: res[3] })
+      setChartData(res[1].predictions || [])
+      setChartTitle('Price Forecast')
+      setIsHistorical(false)
     } catch (err) {
-      setError(err.message || '데이터를 불러오지 못했습니다.')
+      console.error('Refresh failed:', err)
     } finally {
       setLoading(false)
     }
   }, [apiBaseUrl])
 
-  const refreshLatestData = async () => {
-    setRefreshingData(true)
-    setError('')
+  const [historyRange, setHistoryRange] = useState({ 
+    start: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+    end: new Date().toISOString().split('T')[0]
+  })
+
+  const loadHistory = async (symbol, label) => {
     try {
-      const res = await fetch(`${apiBaseUrl}/api/v1/dashboard/refresh`, {
-        method: 'POST',
-      })
-      if (!res.ok) {
-        let message = '최신 데이터 갱신에 실패했습니다.'
-        try {
-          const payload = await res.json()
-          if (payload?.error) message = `${message} ${payload.error}`
-          else if (payload?.message) message = payload.message
-        } catch {
-          // ignore json parse errors
-        }
-        throw new Error(message)
-      }
-      await loadDashboard(false)
+      const url = `${apiBaseUrl}/api/v1/history?symbol=${symbol}&start_date=${historyRange.start}&end_date=${historyRange.end}`
+      console.log('Fetching:', url)
+      const res = await fetch(url)
+      const result = await res.json()
+      setHistoricalData(result)
+      const transformed = result.history.map(h => ({
+        target_date: h.date,
+        horizon_days: '',
+        baseline_predicted_price: h.value,
+        news_adjusted_predicted_price: h.value
+      }))
+      setChartData(transformed)
+      setChartTitle(`${label} Trend (${historyRange.start} ~ ${historyRange.end})`)
+      setIsHistorical(true)
     } catch (err) {
-      setError(err.message || '최신 데이터 갱신에 실패했습니다.')
-    } finally {
-      setRefreshingData(false)
+      console.error('Failed to fetch history:', err)
     }
   }
 
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      loadDashboard(false)
-    }, 0)
-    const interval = setInterval(() => {
-      loadDashboard(false)
-    }, 5 * 60 * 1000)
-    return () => {
-      clearTimeout(timer)
-      clearInterval(interval)
-    }
-  }, [loadDashboard])
+  useEffect(() => { loadData() }, [loadData])
 
-  const sentimentClass = briefing?.sentiment || 'neutral'
-  const sentimentLabel = {
-    bullish: '상승 우세',
-    bearish: '하락 우세',
-    neutral: '중립',
-  }
-  const scoreClass = (purchaseScore?.score ?? 50) >= 70 ? 'good' : (purchaseScore?.score ?? 50) <= 40 ? 'bad' : 'mid'
-
-  const formatNumber = (value, fractionDigits = 2) => {
-    if (value === null || value === undefined || value === '') return '-'
-    const num = Number(value)
-    if (Number.isNaN(num)) return '-'
-    return num.toLocaleString('ko-KR', {
-      minimumFractionDigits: 0,
-      maximumFractionDigits: fractionDigits,
-    })
-  }
-
-  const actionLabel = {
-    buy_today: '오늘 구매',
-    split_buy: '분할 구매',
-    wait: '관망',
-    insufficient_data: '데이터 부족',
-  }
-
-  const decisionMetrics = useMemo(() => {
-    const currentPrice = Number(purchaseScore?.current_price ?? realtime?.domestic_avg_gasoline_krw)
-    const predictedTomorrow = Number(purchaseScore?.predicted_tomorrow)
-    const predicted3d = Number(purchaseScore?.predicted_3d)
-    const score = Number(purchaseScore?.score ?? 50)
-    const newsScore = Number(forecastInfo?.newsSentimentScore ?? briefing?.score ?? 0)
-    const tankCapacity = 20000
-    const normalizedTankLevel = Math.min(100, Math.max(0, Number(tankLevel) || 0))
-    const availableLiters = Math.round(tankCapacity * ((100 - normalizedTankLevel) / 100))
-    const tomorrowDiff = Number.isFinite(predictedTomorrow) && Number.isFinite(currentPrice)
-      ? predictedTomorrow - currentPrice
-      : 0
-    const d3Diff = Number.isFinite(predicted3d) && Number.isFinite(currentPrice)
-      ? predicted3d - currentPrice
-      : tomorrowDiff
-    const weightedDiff = (tomorrowDiff * 0.6) + (d3Diff * 0.4)
-    const weeklyVolume = 12000
-    const monthlyVolume = weeklyVolume * 4
-    const basePrice = Number.isFinite(currentPrice) ? currentPrice : 1700
-    const mechanicalCost = Math.round(basePrice * monthlyVolume)
-    const scoreSavingsPerLiter = Math.max(0, Math.min(38, (score - 45) * 0.9 + Math.max(0, weightedDiff) * 0.35))
-    const platformCost = Math.round(mechanicalCost - (scoreSavingsPerLiter * monthlyVolume))
-    const savings = Math.max(0, mechanicalCost - platformCost)
-    const avoidableCost = Math.max(0, Math.round(availableLiters * tomorrowDiff))
-
-    let tankAction = '가격 방향성이 약해 분할 구매를 권장합니다.'
-    if (tomorrowDiff >= 8 && availableLiters > 0) {
-      tankAction = `탱크 여유 ${availableLiters.toLocaleString('ko-KR')}L. 오늘 최대 ${availableLiters.toLocaleString('ko-KR')}L 선구매 권장.`
-    } else if (tomorrowDiff <= -5) {
-      tankAction = '단기 하락 예상. 필수 재고만 유지하고 추가 구매는 대기하십시오.'
-    } else if (availableLiters < 3000) {
-      tankAction = '탱크 여유가 낮습니다. 가격보다 안전 재고 확보를 우선하십시오.'
-    }
-
-    const oilTrendScore = Math.max(0, Math.min(100, 50 + (weightedDiff * 2.4)))
-    const fxScore = Number.isFinite(Number(realtime?.usd_krw))
-      ? Math.max(0, Math.min(100, 62 - ((Number(realtime.usd_krw) - 1350) * 0.08)))
-      : 50
-    const newsImpactScore = Math.max(0, Math.min(100, 50 + (newsScore * 12)))
-    const inventoryPressureScore = Math.max(0, Math.min(100, 100 - normalizedTankLevel))
-
-    const xaiFactors = [
-      {
-        label: '예측 가격 압력',
-        value: oilTrendScore,
-        tone: oilTrendScore >= 65 ? 'bad' : oilTrendScore <= 42 ? 'good' : 'mid',
-        summary: weightedDiff > 0 ? '상승 압력' : weightedDiff < 0 ? '하락 압력' : '보합',
-      },
-      {
-        label: '환율 부담',
-        value: fxScore,
-        tone: fxScore >= 60 ? 'good' : fxScore <= 40 ? 'bad' : 'mid',
-        summary: fxScore >= 60 ? '우호적' : fxScore <= 40 ? '부담' : '중립',
-      },
-      {
-        label: '뉴스 감성',
-        value: newsImpactScore,
-        tone: newsImpactScore >= 60 ? 'bad' : newsImpactScore <= 40 ? 'good' : 'mid',
-        summary: newsScore > 0.2 ? '상승 재료' : newsScore < -0.2 ? '하락 재료' : '중립',
-      },
-      {
-        label: '재고 여유',
-        value: inventoryPressureScore,
-        tone: inventoryPressureScore >= 65 ? 'bad' : inventoryPressureScore <= 35 ? 'good' : 'mid',
-        summary: `${Math.round(availableLiters).toLocaleString('ko-KR')}L 여유`,
-      },
-    ]
-
-    const notifications = [
-      {
-        level: score >= 70 ? 'urgent' : score <= 40 ? 'notice' : 'normal',
-        title: score >= 70 ? '선구매 검토 필요' : score <= 40 ? '관망 권장' : '분할 구매 권장',
-        body: purchaseScore?.reason || '구매 점수 계산 데이터가 부족합니다.',
-      },
-      {
-        level: tomorrowDiff >= 8 ? 'urgent' : tomorrowDiff <= -5 ? 'notice' : 'normal',
-        title: 'D+1 가격 변화 감지',
-        body: `내일 예측가는 현재가 대비 ${formatNumber(tomorrowDiff)}원/L 차이입니다.`,
-      },
-    ]
-
-    if (alertHistory[0]) {
-      notifications.unshift({
-        level: 'urgent',
-        title: alertHistory[0].rule_name || '알림 발생',
-        body: alertHistory[0].message,
-      })
-    }
-
-    return {
-      normalizedTankLevel,
-      availableLiters,
-      mechanicalCost,
-      platformCost,
-      savings,
-      scoreSavingsPerLiter,
-      avoidableCost,
-      tankAction,
-      tomorrowDiff,
-      xaiFactors,
-      notifications: notifications.slice(0, 3),
-    }
-  }, [alertHistory, briefing, forecastInfo, purchaseScore, realtime, tankLevel])
-
-  const isSuccessMessage = (message) => (
-    message.includes('등록되었습니다')
-    || message.includes('삭제되었습니다')
-    || message.includes('변경되었습니다')
-    || message.includes('평가 완료')
-  )
-
-  const validateAlertForm = () => {
-    const name = newRule.name.trim()
-    const thresholdText = String(newRule.threshold).trim()
-
-    if (!name || !thresholdText) {
-      return '값을 입력하시오.'
-    }
-
-    const threshold = Number(thresholdText)
-    if (Number.isNaN(threshold) || threshold <= 0) {
-      return '임계치는 0보다 큰 숫자로 입력하시오.'
-    }
-
-    return null
-  }
-
-  const createAlertRule = async () => {
-    setAlertFormMessage('')
-    const validationError = validateAlertForm()
-    if (validationError) {
-      setAlertFormMessage(validationError)
-      return
-    }
-
-    try {
-      const res = await fetch(`${apiBaseUrl}/api/v1/alerts/rules`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: newRule.name.trim(),
-          rule_type: newRule.rule_type,
-          threshold: Number(newRule.threshold),
-          enabled: true,
-        }),
-      })
-      if (!res.ok) {
-        let message = '알림 규칙 저장에 실패했습니다.'
-        try {
-          const payload = await res.json()
-          if (payload?.name?.[0]) message = payload.name[0]
-          else if (payload?.threshold?.[0]) message = payload.threshold[0]
-          else if (payload?.detail) message = payload.detail
-        } catch {
-          // ignore json parse errors
-        }
-        setAlertFormMessage(message)
-        return
-      }
-
-      setNewRule({ name: '', rule_type: 'rise', threshold: '' })
-      setAlertFormMessage('알림 규칙이 등록되었습니다.')
-      await loadDashboard(false)
-    } catch (err) {
-      setAlertFormMessage(err.message || '알림 규칙 저장에 실패했습니다. 백엔드 서버를 확인하시오.')
-    }
-  }
-
-  const deleteAlertRule = async (ruleId) => {
-    if (!window.confirm('이 알림 규칙을 삭제할까요?')) {
-      return
-    }
-    try {
-      const res = await fetch(`${apiBaseUrl}/api/v1/alerts/rules/${ruleId}`, {
-        method: 'DELETE',
-      })
-      if (!res.ok && res.status !== 204) {
-        throw new Error('알림 규칙 삭제 실패')
-      }
-      setAlertFormMessage('알림 규칙이 삭제되었습니다.')
-      await loadDashboard(false)
-    } catch (err) {
-      setAlertFormMessage(err.message || '알림 규칙 삭제에 실패했습니다.')
-    }
-  }
-
-  const toggleAlertRule = async (rule) => {
-    try {
-      const res = await fetch(`${apiBaseUrl}/api/v1/alerts/rules/${rule.id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ enabled: !rule.enabled }),
-      })
-      if (!res.ok) {
-        throw new Error('알림 규칙 상태 변경 실패')
-      }
-      setAlertFormMessage('알림 규칙 상태가 변경되었습니다.')
-      await loadDashboard(false)
-    } catch (err) {
-      setAlertFormMessage(err.message || '알림 규칙 상태 변경에 실패했습니다.')
-    }
-  }
-
-  const evaluateAlerts = async () => {
-    setEvaluatingAlerts(true)
-    setAlertFormMessage('')
-    try {
-      const res = await fetch(`${apiBaseUrl}/api/v1/alerts/evaluate`, {
-        method: 'POST',
-      })
-      if (!res.ok) {
-        throw new Error('알림 평가 실패')
-      }
-      const payload = await res.json()
-      setAlertFormMessage(`알림 평가 완료: ${payload.triggered_count ?? 0}건 기록`)
-      await loadDashboard(false)
-    } catch (err) {
-      setAlertFormMessage(err.message || '알림 평가에 실패했습니다.')
-    } finally {
-      setEvaluatingAlerts(false)
-    }
-  }
+  const fmt = (v, d = 0) => v ? Number(v).toLocaleString('ko-KR', { maximumFractionDigits: d }) : '-'
 
   return (
     <div className="app-shell">
-      <header className="hero">
-        <div className="hero-left">
-          <p className="hero-kicker">B2B 의사결정 지원</p>
-          <h1>유가 예측 대시보드</h1>
-          <p>실시간 지표, 단기 예측, AI 브리핑으로 구매 타이밍을 빠르게 판단합니다.</p>
-        </div>
-        <div className="hero-actions">
-          <div className={`score-pill ${scoreClass}`}>
-            Score {purchaseScore?.score ?? '-'} / 100 · {actionLabel[purchaseScore?.action] || '판단 중'}
+      <header className="dashboard-header">
+        <div className="header-title">
+          <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '12px' }}>
+            <Link to="/" className="brand-mark" style={{ fontSize: '1.25rem' }}>Oil Predict</Link>
+            <Link to="/" style={{ 
+              color: 'var(--text-dim)', textDecoration: 'none', fontSize: '0.75rem', fontWeight: 700, padding: '6px 12px', borderRadius: '8px', background: 'var(--bg-input)', border: '1px solid var(--border)'
+            }}>← 홈으로</Link>
           </div>
-          <button
-            type="button"
-            onClick={refreshLatestData}
-            className="refresh-btn"
-            disabled={refreshingData}
-          >
-            {refreshingData ? '갱신 중...' : '최신 데이터 갱신'}
-          </button>
+          
+          <div style={{ display: 'flex', alignItems: 'center', gap: '24px', flexWrap: 'wrap' }}>
+            <div>
+              <h1 style={{ marginBottom: '4px' }}>Market Analysis</h1>
+              <p>실시간 데이터 기반 통합 대시보드</p>
+            </div>
+            
+            <div className="header-actions" style={{ display: 'flex', gap: '10px' }}>
+              <div 
+                className="card metric-card active" 
+                style={{ padding: '8px 20px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', marginBottom: 0 }} 
+                onClick={() => setIsDrawerOpen(!isDrawerOpen)}
+              >
+                <div className="metric-label" style={{ fontSize: '0.6rem', marginBottom: 0 }}>Score ℹ</div>
+                <div className="metric-value" style={{ fontSize: '1rem', margin: 0 }}>{data.purchaseScore?.score ?? '-'}</div>
+              </div>
+              <button className="btn-primary" onClick={() => setIsChatOpen(!isChatOpen)}>AI Chat</button>
+              <button className="btn-primary" onClick={loadData}>Refresh</button>
+            </div>
+          </div>
         </div>
       </header>
 
-      {loading && (
-        <p className="state-banner">
-          <span className="spinner" aria-hidden="true" />
-          데이터를 불러오는 중입니다...
-        </p>
-      )}
-      {error && <p className="state-banner error">{error}</p>}
+      <SideDrawer isOpen={isDrawerOpen} onClose={() => setIsDrawerOpen(false)} />
+      <ChatDrawer isOpen={isChatOpen} onClose={() => setIsChatOpen(false)} apiBaseUrl={apiBaseUrl} />
 
-      {!loading && !error && (
+      {loading ? <p className="text-muted">데이터를 로드하는 중입니다...</p> : (
         <>
-          <section className="grid cards-5">
-            <article className="card metric">
-              <h2>WTI</h2>
-              <p className="value">{formatNumber(realtime?.wti_usd)}</p>
-              <span>USD/barrel</span>
-            </article>
-            <article className="card metric">
-              <h2>브렌트유</h2>
-              <p className="value">{formatNumber(realtime?.brent_usd)}</p>
-              <span>USD/barrel</span>
-            </article>
-            <article className="card metric">
-              <h2>USD/KRW</h2>
-              <p className="value">{formatNumber(realtime?.usd_krw)}</p>
-              <span>KRW/USD</span>
-            </article>
-            <article className="card metric">
-              <h2>국내 평균 휘발유</h2>
-              <p className="value">{formatNumber(realtime?.domestic_avg_gasoline_krw)}</p>
-              <span>KRW/L</span>
-            </article>
-            <article className="card metric highlight">
-              <h2>Smart Purchase Score</h2>
-              <p className="value">{purchaseScore?.score ?? '-'}</p>
-              <span>{actionLabel[purchaseScore?.action] || '데이터 부족'}</span>
-            </article>
-          </section>
-
-          <section className="grid cards-3">
-            <article className="card savings-card">
-              <div className="card-head">
-                <h2>지난 30일 구매 시뮬레이션</h2>
-                <span className="card-badge">Backtest</span>
-              </div>
-              <p className="section-note">
-                월요일마다 고정 구매하는 방식과 구매 점수 기반 구매를 비교한 데모 시뮬레이션입니다.
-              </p>
-              <div className="savings-hero">
-                <span>예상 개선 효과</span>
-                <strong>{formatNumber(decisionMetrics.savings, 0)}원</strong>
-              </div>
-              <div className="compare-list">
-                <div>
-                  <span>고정 구매 비용</span>
-                  <strong>{formatNumber(decisionMetrics.mechanicalCost, 0)}원</strong>
-                </div>
-                <div>
-                  <span>플랫폼 구매 비용</span>
-                  <strong>{formatNumber(decisionMetrics.platformCost, 0)}원</strong>
-                </div>
-              </div>
-              <p className="compact-note">
-                리터당 평균 {formatNumber(decisionMetrics.scoreSavingsPerLiter)}원 절감 가정, 월 48,000L 기준.
-              </p>
-            </article>
-
-            <article className="card tank-card">
-              <div className="card-head">
-                <h2>가상 재고통</h2>
-                <span className="card-badge">Tank</span>
-              </div>
-              <div className="tank-layout">
-                <div className="tank-visual" aria-label="가상 재고통">
-                  <div
-                    className="tank-fill"
-                    style={{ height: `${decisionMetrics.normalizedTankLevel}%` }}
-                  />
-                  <span>{Math.round(decisionMetrics.normalizedTankLevel)}%</span>
-                </div>
-                <div className="tank-control">
-                  <label className="field">
-                    <span>현재 재고율</span>
-                    <input
-                      type="range"
-                      min="0"
-                      max="100"
-                      value={tankLevel}
-                      onChange={(e) => setTankLevel(Number(e.target.value))}
-                    />
-                  </label>
-                  <div className="tank-stats">
-                    <strong>{formatNumber(decisionMetrics.availableLiters, 0)}L 여유</strong>
-                    <span>기회비용 {formatNumber(decisionMetrics.avoidableCost, 0)}원</span>
-                  </div>
-                </div>
-              </div>
-              <p className="briefing-summary">{decisionMetrics.tankAction}</p>
-            </article>
-
-            <article className="card notify-card">
-              <div className="card-head">
-                <h2>알림 내역 패널</h2>
-                <span className="card-badge">Push</span>
-              </div>
-              <div className="notification-list">
-                {decisionMetrics.notifications.map((item) => (
-                  <div className={`notification ${item.level}`} key={`${item.title}-${item.body}`}>
-                    <strong>{item.title}</strong>
-                    <span>{item.body}</span>
-                  </div>
-                ))}
-              </div>
-            </article>
-          </section>
-
-          <section className="grid cards-2">
-            <article className="card">
-              <div className="card-head">
-                <h2>7일 예측</h2>
-                <span className="card-badge">Forecast</span>
-              </div>
-              <p className="section-note">
-                유가 예측 추세와 뉴스·공시 감성을 반영한 예측을 함께 표시합니다. 뉴스 점수: {forecastInfo?.newsSentimentScore ?? '-'}
-              </p>
-              {forecast.length === 0 ? (
-                <p className="muted">예측 데이터가 없습니다.</p>
-              ) : (
-                <>
-                  <ForecastChart rows={forecast} formatNumber={formatNumber} />
-                  <div className="table-wrap">
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>날짜</th>
-                        <th>구간</th>
-                        <th>유가 예측 추세</th>
-                        <th>뉴스 공시 포함 예측</th>
-                        <th>보정</th>
-                        <th>하한</th>
-                        <th>상한</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {forecast.map((row) => (
-                        <tr key={`${row.target_date}-${row.horizon_days}`}>
-                          <td>{row.target_date}</td>
-                          <td>D+{row.horizon_days}</td>
-                          <td>{formatNumber(row.baseline_predicted_price ?? row.predicted_price)}</td>
-                          <td>{formatNumber(row.news_adjusted_predicted_price ?? row.predicted_price)}</td>
-                          <td>{formatNumber(row.news_adjustment ?? 0)}</td>
-                          <td>{formatNumber(row.lower_bound)}</td>
-                          <td>{formatNumber(row.upper_bound)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                  </div>
-                  <p className="muted compact-note">{forecastInfo?.newsAdjustmentMethod}</p>
-                </>
-              )}
-            </article>
-
-            <article className="card briefing-card">
-              <div className="card-head">
-                <h2>AI 시장 브리핑</h2>
-                <span className="card-badge">Insight</span>
-              </div>
-              <div className={`sentiment ${sentimentClass}`}>
-                {sentimentLabel[briefing?.sentiment] || sentimentLabel.neutral}
-              </div>
-              <p className="briefing-title">{briefing?.title || '브리핑 없음'}</p>
-              <p className="briefing-summary">{briefing?.summary || '-'}</p>
-              <p className="muted">
-                감성 점수: {briefing?.score ?? '-'} · 기준일: {briefing?.based_on_date ?? '-'}
-              </p>
-            </article>
-          </section>
-          <section className="grid cards-1">
-            <article className="card guide-card">
-              <div className="card-head">
-                <h2>구매 점수 설명</h2>
-                <span className="card-badge">Action</span>
-              </div>
-              <p className="briefing-summary">{purchaseScore?.reason || '점수 계산 데이터가 부족합니다.'}</p>
-              <div className="factor-list">
-                {decisionMetrics.xaiFactors.map((factor) => (
-                  <div className="factor-row" key={factor.label}>
-                    <div className="factor-meta">
-                      <strong>{factor.label}</strong>
-                      <span className={`factor-chip ${factor.tone}`}>{factor.summary}</span>
-                    </div>
-                    <div className="factor-track">
-                      <span
-                        className={`factor-fill ${factor.tone}`}
-                        style={{ width: `${factor.value}%` }}
-                      />
-                    </div>
-                  </div>
-                ))}
-              </div>
-              <div className="guide-points">
-                <div className="guide-point">
-                  <strong>현재가</strong>
-                  <span>{formatNumber(purchaseScore?.current_price)} 원/L</span>
-                </div>
-                <div className="guide-point">
-                  <strong>D+1 예측</strong>
-                  <span>{formatNumber(purchaseScore?.predicted_tomorrow)} 원/L</span>
-                </div>
-                <div className="guide-point">
-                  <strong>D+3 예측</strong>
-                  <span>{formatNumber(purchaseScore?.predicted_3d)} 원/L</span>
-                </div>
-              </div>
-            </article>
-          </section>
-          <section className="grid cards-2">
-            <article className="card alert-form-card">
-              <div className="card-head">
-                <h2>알림 규칙 등록</h2>
-                <span className="card-badge">Alert</span>
-              </div>
-              <p className="section-note">
-                예측가와 현재가 차이가 임계치를 넘으면 알림 이력에 기록됩니다.
-              </p>
-              <div className="alert-form">
-                <label className="field">
-                  <span>규칙 이름</span>
-                  <input
-                    placeholder="예: 휘발유 10원 상승 알림"
-                    value={newRule.name}
-                    onChange={(e) => {
-                      setAlertFormMessage('')
-                      setNewRule((prev) => ({ ...prev, name: e.target.value }))
-                    }}
-                  />
-                </label>
-                <div className="alert-form-grid">
-                  <label className="field">
-                    <span>알림 유형</span>
-                    <select
-                      value={newRule.rule_type}
-                      onChange={(e) => setNewRule((prev) => ({ ...prev, rule_type: e.target.value }))}
-                    >
-                      <option value="rise">상승 알림</option>
-                      <option value="drop">하락 알림</option>
-                    </select>
-                  </label>
-                  <label className="field">
-                    <span>임계치 (원/L)</span>
-                    <input
-                      placeholder="예: 10"
-                      type="number"
-                      min="1"
-                      value={newRule.threshold}
-                      onChange={(e) => {
-                        setAlertFormMessage('')
-                        setNewRule((prev) => ({ ...prev, threshold: e.target.value }))
-                      }}
-                    />
-                  </label>
-                </div>
-                <div className="alert-form-actions">
-                  <button type="button" className="submit-btn" onClick={createAlertRule}>
-                    등록
-                  </button>
-                </div>
-                {alertFormMessage && (
-                  <p className={`form-message ${isSuccessMessage(alertFormMessage) ? 'success' : 'error'}`}>
-                    {alertFormMessage}
-                  </p>
-                )}
-              </div>
-            </article>
-            <article className="card">
-              <div className="card-head">
-                <h2>등록된 알림 규칙</h2>
-                <button
-                  type="button"
-                  className="evaluate-btn"
-                  onClick={evaluateAlerts}
-                  disabled={evaluatingAlerts}
+          <section className="grid grid-4">
+            {[
+              { label: 'WTI Crude', val: data.realtime?.wti_usd, unit: 'USD/b', symbol: 'WTI' },
+              { label: 'USD / KRW', val: data.realtime?.usd_krw, unit: 'KRW', symbol: 'USDKRW' },
+              { label: '국내 휘발유 평균', val: data.realtime?.domestic_avg_gasoline_krw, unit: '원/L', symbol: 'DOMESTIC_GASOLINE_AVG' },
+              { 
+                label: 'D+1 예측가', 
+                val: data.purchaseScore?.predicted_tomorrow, 
+                unit: '원/L', 
+                symbol: 'PREDICT' 
+              }
+            ].map((m, i) => {
+              const cardContent = (
+                <article 
+                  key={m.label} 
+                  className={`card metric-card`}
+                  style={{ border: '1px solid var(--border)' }}
                 >
-                  {evaluatingAlerts ? '평가 중' : '즉시 평가'}
-                </button>
-              </div>
-              <p className="section-note">
-                등록된 규칙 {alertRules.length}건 중 {alertRules.filter((rule) => rule.enabled).length}건이 활성 상태입니다.
-              </p>
-              {alertRules.length === 0 ? (
-                <p className="muted">등록된 규칙이 없습니다.</p>
-              ) : (
-                <div className="table-wrap">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>이름</th>
-                      <th>유형</th>
-                      <th>임계치</th>
-                      <th>활성</th>
-                      <th>관리</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {alertRules.map((rule) => (
-                      <tr key={rule.id}>
-                        <td>{rule.name}</td>
-                        <td>{rule.rule_type === 'rise' ? '상승' : '하락'}</td>
-                        <td>{rule.threshold}</td>
-                        <td>
-                          <button
-                            type="button"
-                            className={`toggle-btn ${rule.enabled ? 'on' : 'off'}`}
-                            onClick={() => toggleAlertRule(rule)}
-                            aria-pressed={rule.enabled}
-                          >
-                            {rule.enabled ? '활성' : '비활성'}
-                          </button>
-                        </td>
-                        <td className="table-actions">
-                          <button
-                            type="button"
-                            className="delete-btn"
-                            onClick={() => deleteAlertRule(rule.id)}
-                          >
-                            삭제
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-                </div>
-              )}
-            </article>
+                  <p className="metric-label">{m.label}</p>
+                  <h2 className="metric-value">{fmt(m.val, 1)}<span className="metric-unit">{m.unit}</span></h2>
+                  {m.symbol && m.symbol !== 'PREDICT' && <span style={{ fontSize: '0.7rem', color: 'var(--primary)', marginTop: '8px', display: 'block' }}>클릭하여 히스토리 분석 이동 →</span>}
+                  {m.symbol === 'PREDICT' && <span style={{ fontSize: '0.7rem', color: 'var(--primary)', marginTop: '8px', display: 'block' }}>클릭하여 상세 예측 분석 →</span>}
+                </article>
+              );
+
+              return m.symbol === 'PREDICT' ? (
+                <Link key={m.label} to={`/prediction-detail`} style={{ textDecoration: 'none' }}>
+                  {cardContent}
+                </Link>
+              ) : m.symbol ? (
+                <Link key={m.label} to={`/history/${m.symbol}`} style={{ textDecoration: 'none' }}>
+                  {cardContent}
+                </Link>
+              ) : cardContent;
+            })}
           </section>
-          <section className="grid cards-1">
-            <article className="card">
-              <div className="card-head">
-                <h2>최근 알림 이력</h2>
-                <span className="card-badge">{alertHistory.length}건</span>
-              </div>
-              {alertHistory.length === 0 ? (
-                <p className="muted">최근 기록된 알림이 없습니다.</p>
-              ) : (
-                <div className="table-wrap">
+
+          <section className="grid grid-main">
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+              <article className="card briefing-card">
+                <span className="card-title">AI Briefing</span>
+                <h2>{data.briefing?.title || '시장 요약 정보가 없습니다.'}</h2>
+                <p className="briefing-summary">{data.briefing?.summary}</p>
+              </article>
+
+              <article className="card">
+                <span className="card-title">{chartTitle}</span>
+                <ForecastChart rows={chartData} formatNumber={fmt} />
+                <div className="table-container">
                   <table>
                     <thead>
                       <tr>
-                        <th>발생 시각</th>
-                        <th>규칙</th>
-                        <th>현재가</th>
-                        <th>예측가</th>
-                        <th>내용</th>
+                        <th>Date</th>
+                        {isHistorical ? <th>Price</th> : <th>Forecast</th>}
+                        {isHistorical ? null : <th>Adjusted</th>}
+                        {isHistorical ? null : <th>Variation</th>}
                       </tr>
                     </thead>
                     <tbody>
-                      {alertHistory.map((history) => (
-                        <tr key={history.id}>
-                          <td>{new Date(history.triggered_at).toLocaleString('ko-KR')}</td>
-                          <td>{history.rule_name}</td>
-                          <td>{formatNumber(history.current_price)} 원/L</td>
-                          <td>{formatNumber(history.predicted_price)} 원/L</td>
-                          <td>{history.message}</td>
+                      {chartData.slice(0, 10).map((r, i) => (
+                        <tr key={i}>
+                          <td className="text-dim">{r.target_date}</td>
+                          <td style={{ fontWeight: 600 }}>{fmt(r.baseline_predicted_price)}</td>
+                          {!isHistorical && <td style={{ color: 'var(--primary)', fontWeight: 700 }}>{fmt(r.news_adjusted_predicted_price)}</td>}
+                          {!isHistorical && (
+                            <td style={{ color: r.news_adjustment > 0 ? 'var(--danger)' : 'var(--success)', fontWeight: 700 }}>
+                              {r.news_adjustment > 0 ? '+' : ''}{fmt(r.news_adjustment)}
+                            </td>
+                          )}
                         </tr>
                       ))}
                     </tbody>
                   </table>
                 </div>
-              )}
-            </article>
+              </article>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+              <article className="card">
+                <span className="card-title">Decision Basis</span>
+                <p style={{ fontSize: '0.9rem', color: 'var(--text-muted)', marginBottom: '24px' }}>{data.purchaseScore?.reason}</p>
+                {[
+                  { label: 'Forecast Pressure', val: 75 },
+                  { label: 'Currency Risk', val: 40 },
+                  { label: 'Sentiment Index', val: 60 }
+                ].map(f => (
+                  <div key={f.label} className="factor-bar">
+                    <div className="factor-header">
+                      <span>{f.label}</span>
+                      <span style={{ color: 'var(--primary)' }}>Stable</span>
+                    </div>
+                    <div className="bar-track">
+                      <div className="bar-fill" style={{ width: `${f.val}%` }} />
+                    </div>
+                  </div>
+                ))}
+              </article>
+
+              <article className="card">
+                <span className="card-title">Historical Data Explorer</span>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '16px' }}>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    {[
+                      { label: 'WTI', symbol: 'WTI' },
+                      { label: 'USD/KRW', symbol: 'USDKRW' },
+                      { label: '휘발유', symbol: 'DOMESTIC_GASOLINE_AVG' }
+                    ].map(item => (
+                      <button key={item.symbol} onClick={() => loadHistory(item.symbol, item.label)} className="btn-primary" style={{ flex: 1, padding: '8px', fontSize: '0.75rem' }}>
+                        {item.label}
+                      </button>
+                    ))}
+                  </div>
+                  <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                    <input type="date" value={historyRange.start} onChange={(e) => setHistoryRange({...historyRange, start: e.target.value})} style={{ flex: 1 }} />
+                    <span style={{ color: 'var(--text-dim)' }}>~</span>
+                    <input type="date" value={historyRange.end} onChange={(e) => setHistoryRange({...historyRange, end: e.target.value})} style={{ flex: 1 }} />
+                  </div>
+                </div>
+                {historicalData.symbol && (
+                  <div className="table-container" style={{ maxHeight: '200px' }}>
+                    <h4 style={{ color: 'var(--primary)', marginBottom: '8px', fontSize: '0.8rem' }}>{historicalData.symbol} 데이터</h4>
+                    <table>
+                      <thead><tr><th>날짜</th><th>가격</th></tr></thead>
+                      <tbody>
+                        {historicalData.history.slice().reverse().map((h, i) => (
+                          <tr key={i}>
+                            <td className="text-dim">{h.date}</td>
+                            <td style={{ fontWeight: 600 }}>{h.value.toLocaleString()}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </article>
+            </div>
           </section>
-          <footer className="app-footer">Oil Predict · 유가 예측 의사결정 지원 대시보드</footer>
         </>
       )}
     </div>

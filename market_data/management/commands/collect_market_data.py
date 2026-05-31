@@ -1,7 +1,7 @@
 from django.core.management.base import BaseCommand
 
 from market_data.services.collectors import (
-    collect_naver_news_sentiment_point,
+    collect_alphavantage_news_sentiment,
     collect_opinet_points,
     collect_yfinance_points,
     save_points,
@@ -9,13 +9,13 @@ from market_data.services.collectors import (
 
 
 class Command(BaseCommand):
-    help = "Collect market data from yfinance, Opinet, and Naver News."
+    help = "Collect market data from yfinance, Opinet, and Alpha Vantage News."
 
     def handle(self, *args, **options):
         points = []
         points.extend(collect_yfinance_points())
         points.extend(collect_opinet_points())
-        points.extend(collect_naver_news_sentiment_point())
+        points.extend(collect_alphavantage_news_sentiment())
 
         if not points:
             self.stdout.write(

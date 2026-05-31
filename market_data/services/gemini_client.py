@@ -124,18 +124,20 @@ def generate_briefing(context: Dict[str, Any]) -> Optional[Dict[str, str]]:
 
     prompt = (
         "You are an AI energy market analyst writing a daily briefing for Korean gas station owners.\n"
-        "Use the structured data below and write in natural Korean.\n"
-        "Keep the summary concise (3-5 sentences) and actionable.\n\n"
+        "Use the structured data AND the recent headlines below to write a deep, professional briefing in natural Korean.\n"
+        "Crucially, you must explain the reason for the predicted price fluctuations. "
+        "Explicitly connect specific headlines or market factors to the D+1, D+3, and D+7 variations.\n"
+        "Format your answer as a JSON with: title, summary (the briefing), and sentiment.\n\n"
         f"Date: {context.get('date')}\n"
         f"WTI (USD/barrel): {context.get('wti')}\n"
         f"USD/KRW: {context.get('usdkrw')}\n"
         f"Domestic gasoline avg (KRW/L): {context.get('domestic')}\n"
         f"Tomorrow forecast (KRW/L): {context.get('predicted_tomorrow')}\n"
-        f"Forecast range (KRW/L): {context.get('forecast_range')}\n"
-        f"News sentiment score (-3 to +3): {context.get('news_sentiment_score')}\n"
-        f"News sentiment label: {context.get('news_sentiment_label')}\n\n"
-        "Return JSON only with this shape:\n"
-        '{"title":"...", "summary":"...", "sentiment":"bullish|bearish|neutral"}'
+        f"News sentiment score: {context.get('news_sentiment_score')}\n"
+        "--- Recent Global Energy Headlines ---\n"
+        f"{context.get('recent_headlines', 'No headlines available.')}\n"
+        "---------------------------------------\n\n"
+        "Write a structured Korean response. Include a section explaining why the price is forecasted to fluctuate."
     )
 
     try:
@@ -157,3 +159,30 @@ def generate_briefing(context: Dict[str, Any]) -> Optional[Dict[str, str]]:
     except Exception as exc:
         logger.warning("Gemini briefing generation failed: %s", exc)
         return None
+
+
+def chat_with_data(user_message: str, context: Dict[str, Any]) -> str:
+    if not is_configured():
+        return "Gemini API 키가 설정되지 않았습니다."
+
+    prompt = (
+        "You are 'Oil Predict AI', a professional oil market assistant.\n"
+        "Answer the user's question based on the provided market context.\n"
+        "If the data is missing, answer based on your general knowledge but mention the lack of specific data.\n"
+        "Write in a professional yet friendly Korean tone.\n\n"
+        "--- Market Context ---\n"
+        f"WTI: {context.get('wti')} USD/barrel\n"
+        f"Domestic Gasoline: {context.get('domestic')} KRW/L\n"
+        f"Tomorrow Forecast: {context.get('predicted_tomorrow')} KRW/L\n"
+        f"Market Sentiment: {context.get('sentiment')}\n"
+        "-----------------------\n\n"
+        f"User: {user_message}\n"
+        "AI:"
+    )
+
+    try:
+        response = _get_model().generate_content(prompt)
+        return getattr(response, "text", "").strip() or "응답을 생성할 수 없습니다."
+    except Exception as exc:
+        logger.error("Gemini chat failed: %s", exc)
+        return f"죄송합니다. 오류가 발생했습니다: {str(exc)}"
