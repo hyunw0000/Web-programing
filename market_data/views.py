@@ -106,9 +106,9 @@ class HistoricalDataView(APIView):
         # DB 필터링
         queryset = RawMarketData.objects.filter(symbol=symbol)
         if start_date:
-            queryset = queryset.filter(observed_at__gte=start_date)
+            queryset = queryset.filter(observed_at__date__gte=start_date)
         if end_date:
-            queryset = queryset.filter(observed_at__lte=end_date)
+            queryset = queryset.filter(observed_at__date__lte=end_date)
             
         data = queryset.order_by("-observed_at")
         results = [{"date": entry.observed_at.strftime("%Y-%m-%d"), "value": float(entry.value)} for entry in data]

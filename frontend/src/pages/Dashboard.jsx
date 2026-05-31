@@ -247,9 +247,10 @@ function Dashboard() {
     end: new Date().toISOString().split('T')[0]
   })
 
-  const loadHistory = async (symbol, label, range = historyRange) => {
+  const loadHistory = async (symbol, label) => {
     try {
-      const url = `${apiBaseUrl}/api/v1/history?symbol=${symbol}&start_date=${range.start}&end_date=${range.end}`
+      const url = `${apiBaseUrl}/api/v1/history?symbol=${symbol}&start_date=${historyRange.start}&end_date=${historyRange.end}`
+      console.log('Fetching:', url)
       const res = await fetch(url)
       const result = await res.json()
       setHistoricalData(result)
@@ -260,7 +261,7 @@ function Dashboard() {
         news_adjusted_predicted_price: h.value
       }))
       setChartData(transformed)
-      setChartTitle(`${label} Trend (${range.start} ~ ${range.end})`)
+      setChartTitle(`${label} Trend (${historyRange.start} ~ ${historyRange.end})`)
       setIsHistorical(true)
     } catch (err) {
       console.error('Failed to fetch history:', err)
