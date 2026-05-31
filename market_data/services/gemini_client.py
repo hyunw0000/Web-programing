@@ -157,3 +157,30 @@ def generate_briefing(context: Dict[str, Any]) -> Optional[Dict[str, str]]:
     except Exception as exc:
         logger.warning("Gemini briefing generation failed: %s", exc)
         return None
+
+
+def chat_with_data(user_message: str, context: Dict[str, Any]) -> str:
+    if not is_configured():
+        return "Gemini API 키가 설정되지 않았습니다."
+
+    prompt = (
+        "You are 'Oil Predict AI', a professional oil market assistant.\n"
+        "Answer the user's question based on the provided market context.\n"
+        "If the data is missing, answer based on your general knowledge but mention the lack of specific data.\n"
+        "Write in a professional yet friendly Korean tone.\n\n"
+        "--- Market Context ---\n"
+        f"WTI: {context.get('wti')} USD/barrel\n"
+        f"Domestic Gasoline: {context.get('domestic')} KRW/L\n"
+        f"Tomorrow Forecast: {context.get('predicted_tomorrow')} KRW/L\n"
+        f"Market Sentiment: {context.get('sentiment')}\n"
+        "-----------------------\n\n"
+        f"User: {user_message}\n"
+        "AI:"
+    )
+
+    try:
+        response = _get_model().generate_content(prompt)
+        return getattr(response, "text", "").strip() or "응답을 생성할 수 없습니다."
+    except Exception as exc:
+        logger.error("Gemini chat failed: %s", exc)
+        return f"죄송합니다. 오류가 발생했습니다: {str(exc)}"

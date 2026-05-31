@@ -4,6 +4,26 @@ from rest_framework.views import APIView
 
 from .models import RawMarketData
 from .services.freshness import ensure_market_data_fresh
+from .services import gemini_client
+
+
+class ChatView(APIView):
+    def post(self, request):
+        user_message = request.data.get("message")
+        if not user_message:
+            return Response({"error": "메시지를 입력해주세요."}, status=400)
+
+        wti = RawMarketData.objects.filter(symbol="WTI").order_by("-observed_at").first()
+        domestic = RawMarketData.objects.filter(symbol="DOMESTIC_GASOLINE_AVG").order_by("-observed_at").first()
+        
+        context = {
+            "wti": float(wti.value) if wti else "unknown",
+            "domestic": float(domestic.value) if domestic else "unknown",
+            "sentiment": "neutral",
+        }
+
+        ai_response = gemini_client.chat_with_data(user_message, context)
+        return Response({"response": ai_response})
 
 
 class RealtimeDashboardView(APIView):
