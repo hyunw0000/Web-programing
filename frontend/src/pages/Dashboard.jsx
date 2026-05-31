@@ -219,14 +219,24 @@ function Dashboard() {
 
   const [chartData, setChartData] = useState([])
   const [chartTitle, setChartTitle] = useState('Price Forecast')
+  const [isHistorical, setIsHistorical] = useState(false)
 
   const loadData = useCallback(async () => {
+    setLoading(true)
     try {
+      // 1. 트리거: 시장 데이터 수집 -> 예측 생성 -> 브리핑 생성
+      await fetch(`${apiBaseUrl}/api/v1/dashboard/refresh`, { method: 'POST' })
+      
+      // 2. 대시보드 데이터 조회
       const endpoints = ['dashboard/realtime', 'forecast?horizon=7d', 'briefings/latest', 'purchase-score']
       const res = await Promise.all(endpoints.map(e => fetch(`${apiBaseUrl}/api/v1/${e}`).then(r => r.json())))
+      
       setData({ realtime: res[0], forecast: res[1].predictions || [], briefing: res[2], purchaseScore: res[3] })
       setChartData(res[1].predictions || [])
       setChartTitle('Price Forecast')
+      setIsHistorical(false)
+    } catch (err) {
+      console.error('Refresh failed:', err)
     } finally {
       setLoading(false)
     }
@@ -251,6 +261,7 @@ function Dashboard() {
       }))
       setChartData(transformed)
       setChartTitle(`${label} Trend (${range.start} ~ ${range.end})`)
+      setIsHistorical(true)
     } catch (err) {
       console.error('Failed to fetch history:', err)
     }
@@ -303,18 +314,36 @@ function Dashboard() {
               { label: 'WTI Crude', val: data.realtime?.wti_usd, unit: 'USD/b', symbol: 'WTI' },
               { label: 'USD / KRW', val: data.realtime?.usd_krw, unit: 'KRW', symbol: 'USDKRW' },
               { label: '국내 휘발유 평균', val: data.realtime?.domestic_avg_gasoline_krw, unit: '원/L', symbol: 'DOMESTIC_GASOLINE_AVG' },
-              { label: 'D+1 예측가', val: data.purchaseScore?.predicted_tomorrow, unit: '원/L', symbol: null }
-            ].map((m, i) => (
-              <article 
-                key={m.label} 
-                className={`card metric-card ${m.symbol ? 'clickable' : ''}`}
-                style={{ cursor: m.symbol ? 'pointer' : 'default' }}
-                onClick={() => m.symbol && loadHistory(m.symbol, m.label, historyDays)}
-              >
-                <p className="metric-label">{m.label} {m.symbol && 'ℹ'}</p>
-                <h2 className="metric-value">{fmt(m.val, 1)}<span className="metric-unit">{m.unit}</span></h2>
-              </article>
-            ))}
+              { 
+                label: 'D+1 예측가', 
+                val: data.purchaseScore?.predicted_tomorrow, 
+                unit: '원/L', 
+                symbol: 'PREDICT' 
+              }
+            ].map((m, i) => {
+              const cardContent = (
+                <article 
+                  key={m.label} 
+                  className={`card metric-card`}
+                  style={{ border: '1px solid var(--border)' }}
+                >
+                  <p className="metric-label">{m.label}</p>
+                  <h2 className="metric-value">{fmt(m.val, 1)}<span className="metric-unit">{m.unit}</span></h2>
+                  {m.symbol && m.symbol !== 'PREDICT' && <span style={{ fontSize: '0.7rem', color: 'var(--primary)', marginTop: '8px', display: 'block' }}>클릭하여 히스토리 분석 이동 →</span>}
+                  {m.symbol === 'PREDICT' && <span style={{ fontSize: '0.7rem', color: 'var(--primary)', marginTop: '8px', display: 'block' }}>클릭하여 상세 예측 분석 →</span>}
+                </article>
+              );
+
+              return m.symbol === 'PREDICT' ? (
+                <Link key={m.label} to={`/prediction-detail`} style={{ textDecoration: 'none' }}>
+                  {cardContent}
+                </Link>
+              ) : m.symbol ? (
+                <Link key={m.label} to={`/history/${m.symbol}`} style={{ textDecoration: 'none' }}>
+                  {cardContent}
+                </Link>
+              ) : cardContent;
+            })}
           </section>
 
           <section className="grid grid-main">
@@ -331,17 +360,24 @@ function Dashboard() {
                 <div className="table-container">
                   <table>
                     <thead>
-                      <tr><th>Date</th><th>Forecast</th><th>Adjusted</th><th>Variation</th></tr>
+                      <tr>
+                        <th>Date</th>
+                        {isHistorical ? <th>Price</th> : <th>Forecast</th>}
+                        {isHistorical ? null : <th>Adjusted</th>}
+                        {isHistorical ? null : <th>Variation</th>}
+                      </tr>
                     </thead>
                     <tbody>
-                      {data.forecast.slice(0, 5).map((r, i) => (
+                      {chartData.slice(0, 10).map((r, i) => (
                         <tr key={i}>
                           <td className="text-dim">{r.target_date}</td>
                           <td style={{ fontWeight: 600 }}>{fmt(r.baseline_predicted_price)}</td>
-                          <td style={{ color: 'var(--primary)', fontWeight: 700 }}>{fmt(r.news_adjusted_predicted_price)}</td>
-                          <td style={{ color: r.news_adjustment > 0 ? 'var(--danger)' : 'var(--success)', fontWeight: 700 }}>
-                            {r.news_adjustment > 0 ? '+' : ''}{fmt(r.news_adjustment)}
-                          </td>
+                          {!isHistorical && <td style={{ color: 'var(--primary)', fontWeight: 700 }}>{fmt(r.news_adjusted_predicted_price)}</td>}
+                          {!isHistorical && (
+                            <td style={{ color: r.news_adjustment > 0 ? 'var(--danger)' : 'var(--success)', fontWeight: 700 }}>
+                              {r.news_adjustment > 0 ? '+' : ''}{fmt(r.news_adjustment)}
+                            </td>
+                          )}
                         </tr>
                       ))}
                     </tbody>

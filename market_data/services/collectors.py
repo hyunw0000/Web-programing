@@ -90,8 +90,11 @@ def collect_opinet_points() -> List[MarketPoint]:
         if not product_code or avg_price in (None, ""):
             continue
 
-        # B027(휘발유)를 대시보드 핵심 지표로 우선 저장.
-        symbol = "DOMESTIC_GASOLINE_AVG" if product_code == "B027" else "OPINET_" + product_code
+        # 제품별 심볼 매핑
+        if product_code == "B027":
+            symbol = "DOMESTIC_GASOLINE_AVG"
+        else:
+            symbol = "OPINET_" + product_code
         try:
             value = Decimal(str(avg_price))
         except Exception:

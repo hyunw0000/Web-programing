@@ -29,7 +29,49 @@ const FeatureCard = ({ id, subtitle, summary, details }) => {
   )
 }
 
+function SideDrawer({ isOpen, onClose }) {
+  return (
+    <div style={{
+      position: 'fixed', top: 0, left: isOpen ? 0 : '-400px', width: '400px', height: '100%',
+      background: 'var(--bg-card)', borderRight: '1px solid var(--border)', zIndex: 1000,
+      transition: 'left 0.3s ease', padding: '40px', boxShadow: '10px 0 30px rgba(0,0,0,0.5)'
+    }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '30px' }}>
+        <h2 style={{ color: '#fff' }}>점수 산정 원리</h2>
+        <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'var(--text-dim)', cursor: 'pointer', fontSize: '1.2rem' }}>✕</button>
+      </div>
+      <p style={{ color: 'var(--text-muted)', marginBottom: '20px' }}>Purchase Score는 단기/중기 가격 예측치를 가중 평균하여 산출된 0~100점 지표입니다.</p>
+      
+      <div className="card" style={{ background: 'var(--bg-input)', padding: '20px', marginBottom: '20px' }}>
+        <h4 style={{ color: 'var(--primary)', marginBottom: '10px' }}>산식</h4>
+        <p style={{ fontSize: '0.85rem', color: '#fff' }}>Score = 50 + (예측 변동폭 × 2.5)</p>
+      </div>
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <div style={{ width: '12px', height: '12px', borderRadius: '50%', background: 'var(--success)' }} />
+          <span style={{ fontWeight: 700, color: '#fff' }}>70점 이상 (오늘 구매)</span>
+        </div>
+        <p style={{ fontSize: '0.8rem', color: 'var(--text-dim)', marginLeft: '22px' }}>단기 상승 가능성이 높아 오늘 선구매가 유리합니다.</p>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <div style={{ width: '12px', height: '12px', borderRadius: '50%', background: 'var(--warning)' }} />
+          <span style={{ fontWeight: 700, color: '#fff' }}>40~69점 (분할 구매)</span>
+        </div>
+        <p style={{ fontSize: '0.8rem', color: 'var(--text-dim)', marginLeft: '22px' }}>가격 방향성이 혼조세입니다. 리스크 관리를 위해 나누어 구매하세요.</p>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <div style={{ width: '12px', height: '12px', borderRadius: '50%', background: 'var(--danger)' }} />
+          <span style={{ fontWeight: 700, color: '#fff' }}>40점 이하 (관망)</span>
+        </div>
+        <p style={{ fontSize: '0.8rem', color: 'var(--text-dim)', marginLeft: '22px' }}>가격 하락 가능성이 있어 관망 전략이 유리합니다.</p>
+      </div>
+    </div>
+  )
+}
+
 function Home() {
+  const [isDrawerOpen, setIsDrawerOpen] = useState(false)
   const apiBaseUrl = useMemo(
     () => import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000',
     [],
@@ -80,11 +122,21 @@ function Home() {
     { label: 'WTI Crude', val: summary.realtime?.wti_usd, unit: 'USD/b', symbol: 'WTI' },
     { label: 'USD / KRW', val: summary.realtime?.usd_krw, unit: 'KRW', symbol: 'USDKRW' },
     { label: '국내 휘발유 평균', val: summary.realtime?.domestic_avg_gasoline_krw, unit: '원/L', symbol: 'DOMESTIC_GASOLINE_AVG' },
-    { label: 'AI 예측 변동', val: summary.purchaseScore?.predicted_tomorrow ? (Number(summary.purchaseScore.predicted_tomorrow) - Number(summary.realtime?.domestic_avg_gasoline_krw)).toFixed(1) : '-', unit: '원/L', symbol: null }
-  ]
+    { 
+      label: '오늘 매수 시 절감액 (1KL)', 
+      val: summary.purchaseScore?.predicted_tomorrow 
+        ? (Number(summary.purchaseScore.predicted_tomorrow) - Number(summary.realtime?.domestic_avg_gasoline_krw)) * 1000 
+        : 0, 
+      unit: '원', 
+      symbol: null 
+    }
+    ]
+
 
   return (
     <div className="app-shell">
+      <SideDrawer isOpen={isDrawerOpen} onClose={() => setIsDrawerOpen(false)} />
+
       <nav className="site-nav" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '60px' }}>
         <Link to="/" className="brand-mark">Oil Predict</Link>
         <div style={{ display: 'flex', gap: '32px', alignItems: 'center' }}>
@@ -110,7 +162,18 @@ function Home() {
             </Link>
           </div>
 
-          <div className="card active" style={{ padding: '32px', position: 'relative', overflow: 'hidden', border: '1px solid var(--primary)', background: 'linear-gradient(135deg, var(--bg-card) 0%, rgba(56, 189, 248, 0.05) 100%)' }}>
+          <div 
+            className="card active" 
+            style={{ 
+              padding: '32px', position: 'relative', overflow: 'hidden', border: '1px solid var(--primary)', 
+              background: 'linear-gradient(135deg, var(--bg-card) 0%, rgba(56, 189, 248, 0.05) 100%)',
+              cursor: 'pointer',
+              transition: 'transform 0.2s'
+            }} 
+            onClick={() => setIsDrawerOpen(!isDrawerOpen)}
+            onMouseOver={(e) => e.currentTarget.style.transform = 'scale(1.02)'}
+            onMouseOut={(e) => e.currentTarget.style.transform = 'scale(1)'}
+          >
             <span className="card-title">LIVE MARKET SCORE</span>
             <div style={{ display: 'flex', alignItems: 'baseline', gap: '16px', margin: '20px 0' }}>
               <span style={{ fontSize: '5rem', fontWeight: 900, color: '#fff', letterSpacing: '-0.05em' }}>{score}</span>

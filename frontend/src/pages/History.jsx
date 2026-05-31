@@ -1,9 +1,10 @@
 import { useEffect, useState, useMemo, useRef } from 'react'
-import { useParams, Link } from 'react-router-dom'
+import { useParams, useNavigate, Link } from 'react-router-dom'
 import '../App.css'
 
 function HistoryPage() {
   const { symbol } = useParams()
+  const navigate = useNavigate()
   const apiBaseUrl = useMemo(() => import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000', [])
   const [data, setData] = useState([])
   const [loading, setLoading] = useState(true)
@@ -82,9 +83,9 @@ function HistoryPage() {
         <div className="header-title">
           <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '12px' }}>
             <Link to="/" className="brand-mark" style={{ fontSize: '1.25rem' }}>Oil Predict</Link>
-            <Link to="/" style={{ color: 'var(--text-dim)', textDecoration: 'none', fontSize: '0.75rem', fontWeight: 700, padding: '6px 12px', borderRadius: '8px', background: 'var(--bg-input)', border: '1px solid var(--border)' }}>
-              ← 메인으로
-            </Link>
+            <button onClick={() => navigate(-1)} style={{ color: 'var(--text-dim)', background: 'var(--bg-input)', border: '1px solid var(--border)', padding: '6px 12px', borderRadius: '8px', cursor: 'pointer', fontWeight: 700, fontSize: '0.75rem' }}>
+              ← 이전 페이지로
+            </button>
           </div>
           <h1>{symbolLabel} 히스토리 분석</h1>
           <p>마우스를 올려 상세 가격을 확인하세요</p>
@@ -152,7 +153,7 @@ function HistoryPage() {
                     {/* Tooltip Box */}
                     <g transform={`translate(${hoveredPoint.x > chart.width - 150 ? hoveredPoint.x - 130 : hoveredPoint.x + 10}, ${hoveredPoint.y - 40})`}>
                       <rect width="120" height="50" rx="8" fill="var(--bg-card)" stroke="var(--primary)" strokeWidth="1" />
-                      <text x="10" y="20" fill="var(--text-dim)" fontSize="10" fontWeight="700">{hoveredPoint.date}</text>
+                      <text x="60" y="20" textAnchor="middle" fill="#fff" fontSize="11" fontWeight="800">{hoveredPoint.date}</text>
                       <text x="10" y="40" fill="#fff" fontSize="14" fontWeight="800">{hoveredPoint.value.toLocaleString()}</text>
                     </g>
                   </g>
