@@ -49,6 +49,13 @@ function Home() {
                  summary.purchaseScore?.action === 'split_buy' ? '분할 구매' : 
                  summary.purchaseScore?.action === 'wait' ? '관망' : '판단 대기'
 
+  const metrics = [
+    { label: 'WTI Crude', val: summary.realtime?.wti_usd, unit: 'USD/b', symbol: 'WTI' },
+    { label: 'USD / KRW', val: summary.realtime?.usd_krw, unit: 'KRW', symbol: 'USDKRW' },
+    { label: '국내 휘발유 평균', val: summary.realtime?.domestic_avg_gasoline_krw, unit: '원/L', symbol: 'DOMESTIC_GASOLINE_AVG' },
+    { label: 'AI 예측 변동', val: summary.purchaseScore?.predicted_tomorrow ? (Number(summary.purchaseScore.predicted_tomorrow) - Number(summary.realtime?.domestic_avg_gasoline_krw)).toFixed(1) : '-', unit: '원/L', symbol: null }
+  ]
+
   return (
     <div className="app-shell">
       <nav className="site-nav" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '60px' }}>
@@ -96,17 +103,31 @@ function Home() {
 
         {/* Quick Metrics */}
         <section className="grid grid-4" style={{ marginBottom: '100px' }}>
-          {[
-            { label: 'WTI Crude', val: summary.realtime?.wti_usd, unit: 'USD/b' },
-            { label: 'USD / KRW', val: summary.realtime?.usd_krw, unit: 'KRW' },
-            { label: '국내 휘발유 평균', val: summary.realtime?.domestic_avg_gasoline_krw, unit: '원/L' },
-            { label: 'D+1 예상 변동', val: summary.purchaseScore?.predicted_tomorrow ? (Number(summary.purchaseScore.predicted_tomorrow) - Number(summary.realtime?.domestic_avg_gasoline_krw)).toFixed(1) : '-', unit: '원/L' }
-          ].map((m) => (
-            <div key={m.label} className="card metric-card" style={{ padding: '24px' }}>
-              <p className="metric-label">{m.label}</p>
-              <h2 className="metric-value" style={{ fontSize: '1.5rem' }}>{formatNumber(m.val, 1)}<span className="metric-unit" style={{ fontSize: '0.8rem', marginLeft: '4px' }}>{m.unit}</span></h2>
-            </div>
-          ))}
+          {metrics.map((m) => {
+            const content = (
+              <>
+                <p className="metric-label">{m.label}</p>
+                <h2 className="metric-value" style={{ fontSize: '1.5rem' }}>
+                  {formatNumber(m.val, 1)}<span className="metric-unit" style={{ fontSize: '0.8rem', marginLeft: '4px' }}>{m.unit}</span>
+                </h2>
+                {m.symbol && <span style={{ fontSize: '0.7rem', color: 'var(--primary)', marginTop: '8px', fontWeight: 700 }}>클릭하여 히스토리 보기 →</span>}
+              </>
+            )
+            
+            if (m.symbol) {
+              return (
+                <Link key={m.label} to={`/history/${m.symbol}`} className="card metric-card" style={{ padding: '24px', textDecoration: 'none', transition: 'transform 0.2s, border-color 0.2s', cursor: 'pointer' }}>
+                  {content}
+                </Link>
+              )
+            }
+            
+            return (
+              <div key={m.label} className="card metric-card" style={{ padding: '24px' }}>
+                {content}
+              </div>
+            )
+          })}
         </section>
 
         {/* Feature Grid */}

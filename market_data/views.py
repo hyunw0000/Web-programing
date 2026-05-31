@@ -77,3 +77,52 @@ class DashboardRefreshView(APIView):
                 "results": results,
             }
         )
+
+
+import yfinance as yf
+from datetime import timedelta
+
+class HistoricalDataView(APIView):
+    def get(self, request):
+        symbol = request.query_params.get("symbol")
+        days = int(request.query_params.get("days", 30))
+        
+        if not symbol:
+            return Response({"error": "Symbol is required"}, status=400)
+            
+        yf_mapping = {
+            "WTI": "CL=F",
+            "BRENT": "BZ=F",
+            "USDKRW": "USDKRW=X"
+        }
+
+        if symbol in yf_mapping:
+            try:
+                ticker = yf.Ticker(yf_mapping[symbol])
+                # Fetch slightly more to ensure enough points for the requested days
+                hist = ticker.history(period="1y") # Get enough for 90d+
+                hist = hist.tail(days)
+                results = [
+                    {
+                        "date": index.strftime("%Y-%m-%d"),
+                        "value": round(float(row["Close"]), 2)
+                    }
+                    for index, row in hist.iterrows()
+                ]
+                return Response({"symbol": symbol, "history": results})
+            except Exception as e:
+                pass
+
+        data = RawMarketData.objects.filter(symbol=symbol).order_by("-observed_at")[:days]
+        results = [
+            {
+                "date": entry.observed_at.strftime("%Y-%m-%d"),
+                "value": float(entry.value)
+            }
+            for entry in data
+        ]
+        
+        return Response({
+            "symbol": symbol,
+            "history": results[::-1] # 오래된 데이터부터 차트에 표시
+        })
