@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, useRef } from 'react'
+import { Link } from 'react-router-dom'
 import '../App.css'
 
 function ForecastChart({ rows, formatNumber }) {
@@ -164,6 +165,24 @@ function Dashboard() {
     <div className="app-shell">
       <header className="dashboard-header">
         <div className="header-title">
+          <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '12px' }}>
+            <Link to="/" className="brand-mark" style={{ fontSize: '1.25rem' }}>Oil Predict</Link>
+            <Link to="/" style={{ 
+              color: 'var(--text-dim)', 
+              textDecoration: 'none', 
+              fontSize: '0.75rem', 
+              fontWeight: 700, 
+              padding: '6px 12px', 
+              borderRadius: '8px', 
+              background: 'var(--bg-input)', 
+              border: '1px solid var(--border)',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '4px'
+            }}>
+              ← 홈으로 돌아가기
+            </Link>
+          </div>
           <h1>Market Analysis</h1>
           <p>실시간 데이터 기반 통합 대시보드</p>
         </div>

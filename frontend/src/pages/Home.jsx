@@ -113,7 +113,17 @@ function Home() {
         <section id="value" style={{ marginBottom: '100px' }}>
           <div style={{ textAlign: 'center', marginBottom: '60px' }}>
             <span className="home-kicker">Core Values</span>
-            <h2 style={{ fontSize: '2.5rem', fontWeight: 800, color: '#fff' }}>모든 판단은 데이터로 증명됩니다</h2>
+            <h2 style={{ 
+              fontSize: '3rem', 
+              fontWeight: 900, 
+              color: '#fff', 
+              letterSpacing: '-0.04em', 
+              background: 'linear-gradient(135deg, #fff 0%, #0ea5e9 100%)', 
+              WebkitBackgroundClip: 'text', 
+              WebkitTextFillColor: 'transparent'
+            }}>
+              모든 판단은 데이터로 증명됩니다
+            </h2>
           </div>
           <div className="grid" style={{ gridTemplateColumns: 'repeat(3, 1fr)', gap: '24px' }}>
             <article className="card" style={{ padding: '32px' }}>
