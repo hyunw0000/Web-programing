@@ -110,6 +110,67 @@ def collect_opinet_points() -> List[MarketPoint]:
     return points
 
 
+def collect_alphavantage_news_sentiment() -> List[MarketPoint]:
+    api_key = os.getenv("ALPHA_VANTAGE_API_KEY")
+    if not api_key:
+        return []
+
+    url = "https://www.alphavantage.co/query"
+    params = {
+        "function": "NEWS_SENTIMENT",
+        "topics": "energy",
+        "limit": 20,
+        "apikey": api_key,
+    }
+
+    try:
+        response = requests.get(url, params=params, timeout=15)
+        response.raise_for_status()
+        payload = response.json()
+    except Exception:
+        return []
+
+    feed = payload.get("feed", [])
+    if not feed:
+        return []
+
+    scores = []
+    news_items = []
+    for article in feed:
+        score = article.get("overall_sentiment_score")
+        if score is not None:
+            scores.append(float(score))
+            news_items.append({
+                "title": article.get("title"),
+                "summary": article.get("summary"),
+                "sentiment_score": score,
+                "url": article.get("url")
+            })
+
+    if not scores:
+        return []
+
+    avg_score = sum(scores) / len(scores)
+    mapped_score = Decimal(str(round(avg_score * 3.0, 4)))
+
+    now_utc = datetime.now(timezone.utc)
+    return [
+        MarketPoint(
+            source="alphavantage",
+            symbol="NEWS_SENTIMENT_SCORE",
+            value=mapped_score,
+            unit="score",
+            observed_at=now_utc,
+            metadata={
+                "article_count": len(feed),
+                "raw_avg_score": round(avg_score, 4),
+                "news_items": news_items, # Gemini 분석용 데이터
+                "method": "alphavantage_news_sentiment"
+            },
+        )
+    ]
+
+
 def save_points(points: List[MarketPoint]) -> int:
     created_count = 0
     for point in points:

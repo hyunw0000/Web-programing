@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from 'react'
+import { useEffect, useState, useMemo, useRef } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import '../App.css'
 
@@ -7,7 +7,11 @@ function HistoryPage() {
   const apiBaseUrl = useMemo(() => import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000', [])
   const [data, setData] = useState([])
   const [loading, setLoading] = useState(true)
-  const [range, setRange] = useState(30) // Default 30 days
+  const [range, setRange] = useState(30)
+  
+  // Interactive Tooltip State
+  const [hoveredPoint, setHovererPoint] = useState(null)
+  const svgRef = useRef(null)
 
   useEffect(() => {
     const fetchHistory = async () => {
@@ -29,7 +33,7 @@ function HistoryPage() {
     if (data.length === 0) return null
     const width = 1000
     const height = 400
-    const padding = { top: 40, right: 50, bottom: 80, left: 80 }
+    const padding = { top: 60, right: 50, bottom: 80, left: 80 }
     const values = data.map(d => d.value)
     const min = Math.min(...values) * 0.98
     const max = Math.max(...values) * 1.02
@@ -42,25 +46,31 @@ function HistoryPage() {
       x: padding.left + i * xStep,
       y: padding.top + ((max - d.value) / rangeVal) * innerHeight,
       date: d.date,
-      value: d.value
+      value: d.value,
+      index: i
     }))
 
-    // Select about 6-8 labels for X-axis
     const labelIndices = []
     const step = Math.max(1, Math.floor(data.length / 6))
-    for (let i = 0; i < data.length; i += step) {
-      labelIndices.push(i)
-    }
-    if (labelIndices[labelIndices.length - 1] !== data.length - 1) {
-      labelIndices.push(data.length - 1)
-    }
+    for (let i = 0; i < data.length; i += step) labelIndices.push(i)
+    if (labelIndices[labelIndices.length - 1] !== data.length - 1) labelIndices.push(data.length - 1)
 
-    return {
-      width, height, points, padding,
-      linePath: points.map(p => `${p.x},${p.y}`).join(' '),
-      min, max, labelIndices
-    }
+    return { width, height, points, padding, linePath: points.map(p => `${p.x},${p.y}`).join(' '), min, max, labelIndices }
   }, [data])
+
+  const handleMouseMove = (e) => {
+    if (!chart || !svgRef.current) return
+    const svg = svgRef.current
+    const rect = svg.getBoundingClientRect()
+    const mouseX = ((e.clientX - rect.left) / rect.width) * chart.width
+    
+    // Find closest point by X coordinate
+    const closest = chart.points.reduce((prev, curr) => 
+      Math.abs(curr.x - mouseX) < Math.abs(prev.x - mouseX) ? curr : prev
+    )
+    
+    setHovererPoint(closest)
+  }
 
   const symbolLabel = symbol === 'WTI' ? 'WTI Crude Oil' : 
                      symbol === 'USDKRW' ? 'USD / KRW 환율' : 
@@ -77,30 +87,12 @@ function HistoryPage() {
             </Link>
           </div>
           <h1>{symbolLabel} 히스토리 분석</h1>
-          <p>기간별 가격 변동 추이 및 데이터 테이블</p>
+          <p>마우스를 올려 상세 가격을 확인하세요</p>
         </div>
         <div className="header-actions">
           <div style={{ display: 'flex', background: 'var(--bg-card)', padding: '4px', borderRadius: '10px', border: '1px solid var(--border)' }}>
-            {[
-              { label: '1주', val: 7 },
-              { label: '1개월', val: 30 },
-              { label: '3개월', val: 90 }
-            ].map(r => (
-              <button 
-                key={r.val}
-                onClick={() => setRange(r.val)}
-                style={{ 
-                  padding: '8px 16px', 
-                  borderRadius: '7px', 
-                  border: 'none',
-                  fontSize: '0.85rem',
-                  fontWeight: 700,
-                  cursor: 'pointer',
-                  background: range === r.val ? 'var(--primary)' : 'transparent',
-                  color: range === r.val ? '#000' : 'var(--text-dim)',
-                  transition: 'all 0.2s'
-                }}
-              >
+            {[ { label: '1주', val: 7 }, { label: '1개월', val: 30 }, { label: '3개월', val: 90 } ].map(r => (
+              <button key={r.val} onClick={() => setRange(r.val)} style={{ padding: '8px 16px', borderRadius: '7px', border: 'none', fontSize: '0.85rem', fontWeight: 700, cursor: 'pointer', background: range === r.val ? 'var(--primary)' : 'transparent', color: range === r.val ? '#000' : 'var(--text-dim)', transition: 'all 0.2s' }}>
                 {r.label}
               </button>
             ))}
@@ -108,18 +100,27 @@ function HistoryPage() {
         </div>
       </header>
 
-      {loading ? <p className="text-dim">과거 데이터를 분석 중입니다...</p> : (
+      {loading ? <p className="text-dim">데이터 로딩 중...</p> : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '32px' }}>
-          <article className="card" style={{ padding: '40px' }}>
+          <article className="card" style={{ padding: '40px', position: 'relative' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '24px' }}>
-              <span className="card-title">{range}일간의 추세 차트</span>
-              <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
-                기간: {data[0]?.date} ~ {data[data.length - 1]?.date}
-              </span>
+              <span className="card-title">{range}일간의 추세 분석</span>
+              {hoveredPoint && (
+                <div style={{ background: 'var(--primary-soft)', padding: '4px 12px', borderRadius: '6px', border: '1px solid var(--primary)', color: 'var(--primary)', fontWeight: 800 }}>
+                  {hoveredPoint.date} : {hoveredPoint.value.toLocaleString()}
+                </div>
+              )}
             </div>
+
             {chart ? (
-              <svg viewBox={`0 0 ${chart.width} ${chart.height}`} style={{ width: '100%', height: 'auto', display: 'block' }}>
-                {/* Y-axis labels & Grid lines */}
+              <svg 
+                ref={svgRef}
+                viewBox={`0 0 ${chart.width} ${chart.height}`} 
+                style={{ width: '100%', height: 'auto', display: 'block', cursor: 'crosshair' }}
+                onMouseMove={handleMouseMove}
+                onMouseLeave={() => setHovererPoint(null)}
+              >
+                {/* Y-axis & Grid */}
                 {[0, 0.25, 0.5, 0.75, 1].map(p => {
                   const val = chart.max - (p * (chart.max - chart.min))
                   const y = chart.padding.top + (p * (chart.height - chart.padding.top - chart.padding.bottom))
@@ -130,52 +131,47 @@ function HistoryPage() {
                     </g>
                   )
                 })}
-                
-                {/* X-axis date labels */}
+
+                {/* X-axis labels */}
                 {chart.labelIndices.map(idx => (
-                  <g key={idx}>
-                    <text 
-                      x={chart.points[idx].x} 
-                      y={chart.height - 40} 
-                      textAnchor="middle" 
-                      fill="var(--text-dim)" 
-                      fontSize="11" 
-                      fontWeight="600"
-                      transform={`rotate(0, ${chart.points[idx].x}, ${chart.height - 40})`}
-                    >
-                      {data[idx].date.split('-').slice(1).join('/')}
-                    </text>
-                    <line x1={chart.points[idx].x} y1={chart.height - 75} x2={chart.points[idx].x} y2={chart.height - 80} stroke="var(--text-dim)" />
-                  </g>
+                  <text key={idx} x={chart.points[idx].x} y={chart.height - 40} textAnchor="middle" fill="var(--text-dim)" fontSize="11" fontWeight="600">
+                    {data[idx].date.split('-').slice(1).join('/')}
+                  </text>
                 ))}
 
-                {/* Main trend line */}
-                <path 
-                  d={`M ${chart.linePath}`} 
-                  fill="none" 
-                  stroke="var(--primary)" 
-                  strokeWidth="5" 
-                  strokeLinecap="round" 
-                  strokeLinejoin="round" 
-                  style={{ filter: 'drop-shadow(0 0 8px var(--primary-soft))' }}
-                />
+                {/* Main line */}
+                <path d={`M ${chart.linePath}`} fill="none" stroke="var(--primary)" strokeWidth="5" strokeLinecap="round" strokeLinejoin="round" style={{ filter: 'drop-shadow(0 0 8px var(--primary-soft))' }} />
                 
-                {/* Data points */}
-                {chart.points.map((p, i) => (
-                  <circle key={i} cx={p.x} cy={p.y} r="5" fill="#fff" stroke="var(--primary)" strokeWidth="3">
-                    <title>{p.date}: {p.value}</title>
-                  </circle>
+                {/* Hover Interaction Elements */}
+                {hoveredPoint && (
+                  <g>
+                    <line x1={hoveredPoint.x} y1={chart.padding.top} x2={hoveredPoint.x} y2={chart.height - chart.padding.bottom} stroke="var(--primary)" strokeWidth="1" strokeDasharray="4" />
+                    <circle cx={hoveredPoint.x} cy={hoveredPoint.y} r="8" fill="var(--primary)" style={{ filter: 'glow(0 0 10px var(--primary))' }} />
+                    <circle cx={hoveredPoint.x} cy={hoveredPoint.y} r="4" fill="#fff" />
+                    
+                    {/* Tooltip Box */}
+                    <g transform={`translate(${hoveredPoint.x > chart.width - 150 ? hoveredPoint.x - 130 : hoveredPoint.x + 10}, ${hoveredPoint.y - 40})`}>
+                      <rect width="120" height="50" rx="8" fill="var(--bg-card)" stroke="var(--primary)" strokeWidth="1" />
+                      <text x="10" y="20" fill="var(--text-dim)" fontSize="10" fontWeight="700">{hoveredPoint.date}</text>
+                      <text x="10" y="40" fill="#fff" fontSize="14" fontWeight="800">{hoveredPoint.value.toLocaleString()}</text>
+                    </g>
+                  </g>
+                )}
+
+                {/* Static points (smaller) */}
+                {!hoveredPoint && chart.points.map((p, i) => (
+                  <circle key={i} cx={p.x} cy={p.y} r="3" fill="var(--primary)" opacity="0.5" />
                 ))}
               </svg>
-            ) : <p className="text-dim">표시할 데이터가 없습니다.</p>}
+            ) : <p>데이터 부족</p>}
           </article>
 
           <article className="card">
-            <span className="card-title">데이터 상세 목록</span>
+            <span className="card-title">일자별 상세 데이터</span>
             <div className="table-container">
               <table>
                 <thead>
-                  <tr><th>날짜</th><th>지표 수치</th><th>변동 비율</th></tr>
+                  <tr><th>날짜</th><th>수치</th><th>변동</th></tr>
                 </thead>
                 <tbody>
                   {data.slice().reverse().map((d, i, arr) => {
@@ -183,12 +179,13 @@ function HistoryPage() {
                     const change = prev ? ((d.value - prev.value) / prev.value * 100).toFixed(2) : '0.00'
                     const isUp = parseFloat(change) > 0
                     return (
-                      <tr key={i}>
+                      <tr key={i} onMouseEnter={() => {
+                        const p = chart?.points.find(pt => pt.date === d.date)
+                        if (p) setHovererPoint(p)
+                      }} onMouseLeave={() => setHovererPoint(null)} style={{ background: hoveredPoint?.date === d.date ? 'rgba(56, 189, 248, 0.05)' : 'transparent', transition: 'background 0.2s' }}>
                         <td className="text-dim" style={{ fontWeight: 600 }}>{d.date}</td>
                         <td style={{ fontWeight: 800, fontSize: '1.1rem', color: '#fff' }}>{d.value.toLocaleString()}</td>
-                        <td style={{ color: isUp ? 'var(--danger)' : 'var(--success)', fontWeight: 800 }}>
-                          {isUp ? '▲' : '▼'} {Math.abs(change)}%
-                        </td>
+                        <td style={{ color: isUp ? 'var(--danger)' : 'var(--success)', fontWeight: 800 }}>{isUp ? '▲' : '▼'} {Math.abs(change)}%</td>
                       </tr>
                     )
                   })}

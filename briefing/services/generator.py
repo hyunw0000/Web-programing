@@ -69,9 +69,16 @@ def generate_market_briefing() -> bool:
     today = timezone.localdate()
     tomorrow = today + timedelta(days=1)
 
-    sentiment_raw = _latest_value("NEWS_SENTIMENT_SCORE")
-    sentiment_score = float(sentiment_raw) if sentiment_raw is not None else 0.0
+    sentiment_row = RawMarketData.objects.filter(symbol="NEWS_SENTIMENT_SCORE").order_by("-observed_at").first()
+    sentiment_score = float(sentiment_row.value) if sentiment_row else 0.0
     sentiment = _get_sentiment(sentiment_score)
+    
+    # 실시간 뉴스 제목들 추출
+    news_headlines = []
+    if sentiment_row and sentiment_row.metadata:
+        items = sentiment_row.metadata.get("news_items", [])
+        for item in items[:10]:
+            news_headlines.append(f"- {item.get('title')} (score: {item.get('sentiment_score')})")
 
     wti = _latest_value("WTI")
     usdkrw = _latest_value("USDKRW")
@@ -106,6 +113,7 @@ def generate_market_briefing() -> bool:
                 "forecast_range": forecast_range,
                 "news_sentiment_score": sentiment_score,
                 "news_sentiment_label": sentiment,
+                "recent_headlines": "\n".join(news_headlines) # 외신 뉴스 제목 전달
             }
         )
 

@@ -2,6 +2,33 @@ import { Link } from 'react-router-dom'
 import { useEffect, useMemo, useState } from 'react'
 import '../App.css'
 
+const FeatureCard = ({ id, subtitle, summary, details }) => {
+  const [isOpen, setIsOpen] = useState(false)
+  return (
+    <article className="card" style={{ padding: '32px', cursor: 'pointer', transition: 'all 0.3s ease' }} onClick={() => setIsOpen(!isOpen)}>
+      <span className="card-title" style={{ color: 'var(--primary)' }}>{id}</span>
+      <h3 style={{ fontSize: '1.25rem', color: '#fff', margin: '16px 0 12px' }}>{subtitle}</h3>
+      <p style={{ color: 'var(--text-muted)', fontSize: '0.95rem', lineHeight: '1.6' }}>{summary}</p>
+      
+      <div style={{ 
+        maxHeight: isOpen ? '200px' : '0px', 
+        overflow: 'hidden', 
+        transition: 'all 0.4s ease',
+        opacity: isOpen ? 1 : 0,
+        marginTop: isOpen ? '20px' : '0px',
+        borderTop: isOpen ? '1px solid var(--border)' : 'none',
+        paddingTop: isOpen ? '20px' : '0px'
+      }}>
+        <h4 style={{ color: 'var(--primary)', fontSize: '0.8rem', textTransform: 'uppercase', marginBottom: '8px' }}>분석 원리</h4>
+        <p style={{ color: 'var(--text-main)', fontSize: '0.85rem', lineHeight: '1.5' }}>{details}</p>
+      </div>
+      <div style={{ marginTop: '16px', color: 'var(--text-dim)', fontSize: '0.75rem' }}>
+        {isOpen ? '닫기 ▴' : '더보기 ▾'}
+      </div>
+    </article>
+  )
+}
+
 function Home() {
   const apiBaseUrl = useMemo(
     () => import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000',
@@ -147,21 +174,24 @@ function Home() {
             </h2>
           </div>
           <div className="grid" style={{ gridTemplateColumns: 'repeat(3, 1fr)', gap: '24px' }}>
-            <article className="card" style={{ padding: '32px' }}>
-              <span className="card-title" style={{ color: 'var(--primary)' }}>01 Analysis</span>
-              <h3 style={{ fontSize: '1.25rem', color: '#fff', margin: '16px 0 12px' }}>정교한 예측 모델</h3>
-              <p style={{ color: 'var(--text-muted)', fontSize: '0.95rem', lineHeight: '1.6' }}>7일간의 가격 추세를 시뮬레이션하여 최적의 구매 시점을 소수점 단위까지 정밀하게 계산합니다.</p>
-            </article>
-            <article className="card" style={{ padding: '32px' }}>
-              <span className="card-title" style={{ color: 'var(--primary)' }}>02 Insights</span>
-              <h3 style={{ fontSize: '1.25rem', color: '#fff', margin: '16px 0 12px' }}>AI 시장 브리핑</h3>
-              <p style={{ color: 'var(--text-muted)', fontSize: '0.95rem', lineHeight: '1.6' }}>복잡한 국제 정세와 유가 뉴스를 주유소 운영에 필요한 정보로만 압축하여 매일 제공합니다.</p>
-            </article>
-            <article className="card" style={{ padding: '32px' }}>
-              <span className="card-title" style={{ color: 'var(--primary)' }}>03 Response</span>
-              <h3 style={{ fontSize: '1.25rem', color: '#fff', margin: '16px 0 12px' }}>실시간 지능형 알림</h3>
-              <p style={{ color: 'var(--text-muted)', fontSize: '0.95rem', lineHeight: '1.6' }}>급격한 시장 변동이 감지되면 즉시 알림을 통해 운영자가 대응할 수 있는 골든타임을 확보합니다.</p>
-            </article>
+            <FeatureCard 
+              id="01 Analysis" 
+              subtitle="정교한 예측 모델" 
+              summary="7일간의 가격 추세를 시뮬레이션하여 최적의 구매 시점을 소수점 단위까지 정밀하게 계산합니다."
+              details="LSTM 기반의 시계열 분석 알고리즘을 사용하여 WTI 유가, 환율, 과거 데이터를 다차원으로 상관 분석합니다. 95% 신뢰구간을 적용하여 D+7일까지의 가격 범위를 산출합니다."
+            />
+            <FeatureCard 
+              id="02 Insights" 
+              subtitle="AI 시장 브리핑" 
+              summary="복잡한 국제 정세와 유가 뉴스를 주유소 운영에 필요한 정보로만 압축하여 매일 제공합니다."
+              details="Alpha Vantage의 뉴스 감성 분석 엔진으로 글로벌 원자재 뉴스를 스코어링하고, Gemini Pro 모델이 이를 한국어로 요약하여 비즈니스 영향력을 분석합니다."
+            />
+            <FeatureCard 
+              id="03 Response" 
+              subtitle="실시간 지능형 알림" 
+              summary="급격한 시장 변동이 감지되면 즉시 알림을 통해 운영자가 대응할 수 있는 골든타임을 확보합니다."
+              details="가격 변동폭이 임계치(예: 3%)를 넘어서는 순간, 데이터베이스가 이를 감지하여 대시보드 히스토리 및 알림 서비스로 즉각 전송합니다."
+            />
           </div>
         </section>
 

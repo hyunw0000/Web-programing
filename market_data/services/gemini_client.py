@@ -124,8 +124,8 @@ def generate_briefing(context: Dict[str, Any]) -> Optional[Dict[str, str]]:
 
     prompt = (
         "You are an AI energy market analyst writing a daily briefing for Korean gas station owners.\n"
-        "Use the structured data below and write in natural Korean.\n"
-        "Keep the summary concise (3-5 sentences) and actionable.\n\n"
+        "Use the structured data AND the recent headlines below to write a deep, professional briefing in natural Korean.\n"
+        "Keep the summary concise (3-5 sentences) and actionable. Explain WHY the sentiment is such based on headlines.\n\n"
         f"Date: {context.get('date')}\n"
         f"WTI (USD/barrel): {context.get('wti')}\n"
         f"USD/KRW: {context.get('usdkrw')}\n"
@@ -134,6 +134,9 @@ def generate_briefing(context: Dict[str, Any]) -> Optional[Dict[str, str]]:
         f"Forecast range (KRW/L): {context.get('forecast_range')}\n"
         f"News sentiment score (-3 to +3): {context.get('news_sentiment_score')}\n"
         f"News sentiment label: {context.get('news_sentiment_label')}\n\n"
+        "--- Recent Global Energy Headlines ---\n"
+        f"{context.get('recent_headlines', 'No headlines available.')}\n"
+        "---------------------------------------\n\n"
         "Return JSON only with this shape:\n"
         '{"title":"...", "summary":"...", "sentiment":"bullish|bearish|neutral"}'
     )
