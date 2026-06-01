@@ -30,12 +30,22 @@ function HistoryPage() {
     fetchHistory()
   }, [symbol, apiBaseUrl, range])
 
+  // Centralized deduplication logic
+  const uniqueData = useMemo(() => {
+    const seenDates = new Set();
+    return data.filter(d => {
+      if (seenDates.has(d.date)) return false;
+      seenDates.add(d.date);
+      return true;
+    });
+  }, [data]);
+
   const chart = useMemo(() => {
-    if (data.length === 0) return null
+    if (uniqueData.length === 0) return null
     const width = 1000
     const height = 400
     const padding = { top: 60, right: 50, bottom: 80, left: 80 }
-    const values = data.map(d => d.value)
+    const values = uniqueData.map(d => d.value)
     const minValue = Math.min(...values)
     const maxValue = Math.max(...values)
     const rangeVal = maxValue - minValue
@@ -46,9 +56,9 @@ function HistoryPage() {
     
     const innerWidth = width - padding.left - padding.right
     const innerHeight = height - padding.top - padding.bottom
-    const xStep = innerWidth / (data.length - 1 || 1)
+    const xStep = innerWidth / (uniqueData.length - 1 || 1)
 
-    const points = data.map((d, i) => ({
+    const points = uniqueData.map((d, i) => ({
       x: padding.left + i * xStep,
       y: padding.top + ((max - d.value) / adjustedRange) * innerHeight,
       date: d.date,
@@ -57,20 +67,28 @@ function HistoryPage() {
     }))
 
     const labelIndices = []
-    // Increase step to reduce number of labels and prevent crowding
-    const step = Math.max(2, Math.floor(data.length / 5)) 
-    for (let i = 0; i < data.length; i += step) labelIndices.push(i)
-    // Ensure the last data point is always labeled
-    if (labelIndices[labelIndices.length - 1] !== data.length - 1) {
-        // If the last label is too close to the second to last, remove the second to last
-        if (labelIndices.length > 1 && (data.length - 1 - labelIndices[labelIndices.length - 2]) < step / 2) {
-            labelIndices.splice(labelIndices.length - 2, 1)
+    // Dynamically calculate step to ensure labels fit (approx 6-8 labels max)
+    const maxLabels = 6;
+    const step = Math.max(1, Math.floor(uniqueData.length / maxLabels));
+    
+    for (let i = 0; i < uniqueData.length; i += step) {
+        // Only add if it's not too close to the last one
+        if (labelIndices.length === 0 || (i - labelIndices[labelIndices.length - 1]) >= step) {
+            labelIndices.push(i);
         }
-        labelIndices.push(data.length - 1)
+    }
+    
+    // Ensure the last data point is included if not already
+    if (labelIndices[labelIndices.length - 1] !== uniqueData.length - 1) {
+        // If the last added is too close to the end, remove it to make room for the actual end label
+        if (uniqueData.length - 1 - labelIndices[labelIndices.length - 1] < step / 2) {
+            labelIndices.pop();
+        }
+        labelIndices.push(uniqueData.length - 1);
     }
 
     return { width, height, points, padding, linePath: points.map(p => `${p.x},${p.y}`).join(' '), min, max, labelIndices }
-  }, [data])
+  }, [uniqueData])
 
   const handleMouseMove = (e) => {
     if (!chart || !svgRef.current) return
@@ -146,7 +164,7 @@ function HistoryPage() {
                   )
                 })}
 
-                {/* X-axis labels */}
+                    {/* X-axis labels */}
                 {chart.labelIndices.map(idx => (
                   <text 
                     key={idx} 
@@ -194,24 +212,38 @@ function HistoryPage() {
             <div className="table-container">
               <table>
                 <thead>
-                  <tr><th>날짜</th><th>수치</th><th>변동</th></tr>
+                  <tr>
+                    <th style={{ width: '30%' }}>날짜</th>
+                    <th style={{ width: '40%' }}>수치</th>
+                    <th style={{ width: '30%' }}>변동</th>
+                  </tr>
                 </thead>
                 <tbody>
-                  {data.slice().reverse().map((d, i, arr) => {
-                    const prev = arr[i + 1]
-                    const change = prev ? ((d.value - prev.value) / prev.value * 100).toFixed(2) : '0.00'
-                    const isUp = parseFloat(change) > 0
-                    return (
-                      <tr key={i} onMouseEnter={() => {
-                        const p = chart?.points.find(pt => pt.date === d.date)
-                        if (p) setHovererPoint(p)
-                      }} onMouseLeave={() => setHovererPoint(null)} style={{ background: hoveredPoint?.date === d.date ? 'rgba(56, 189, 248, 0.05)' : 'transparent', transition: 'background 0.2s' }}>
-                        <td className="text-dim" style={{ fontWeight: 600 }}>{d.date}</td>
-                        <td style={{ fontWeight: 800, fontSize: '1.1rem', color: '#fff' }}>{d.value.toLocaleString()}</td>
-                        <td style={{ color: isUp ? 'var(--danger)' : 'var(--success)', fontWeight: 800 }}>{isUp ? '▲' : '▼'} {Math.abs(change)}%</td>
-                      </tr>
-                    )
-                  })}
+                  {(() => {
+                    // Deduplicate by date
+                    const seenDates = new Set();
+                    const uniqueData = data.slice().reverse().filter(d => {
+                      if (seenDates.has(d.date)) return false;
+                      seenDates.add(d.date);
+                      return true;
+                    });
+                    
+                    return uniqueData.map((d, i, arr) => {
+                      const prev = arr[i + 1]
+                      const change = prev ? ((d.value - prev.value) / prev.value * 100).toFixed(2) : '0.00'
+                      const isUp = parseFloat(change) > 0
+                      return (
+                        <tr key={i} onMouseEnter={() => {
+                          const p = chart?.points.find(pt => pt.date === d.date)
+                          if (p) setHovererPoint(p)
+                        }} onMouseLeave={() => setHovererPoint(null)} style={{ background: hoveredPoint?.date === d.date ? 'rgba(56, 189, 248, 0.05)' : 'transparent', transition: 'background 0.2s' }}>
+                          <td className="text-dim" style={{ fontWeight: 600, whiteSpace: 'nowrap' }}>{d.date}</td>
+                          <td style={{ fontWeight: 800, fontSize: '1.1rem', color: '#fff' }}>{d.value.toLocaleString()}</td>
+                          <td style={{ color: isUp ? 'var(--danger)' : 'var(--success)', fontWeight: 800 }}>{isUp ? '▲' : '▼'} {Math.abs(change)}%</td>
+                        </tr>
+                      )
+                    })
+                  })()}
                 </tbody>
               </table>
             </div>
