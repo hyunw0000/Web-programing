@@ -36,25 +36,38 @@ function HistoryPage() {
     const height = 400
     const padding = { top: 60, right: 50, bottom: 80, left: 80 }
     const values = data.map(d => d.value)
-    const min = Math.min(...values) * 0.98
-    const max = Math.max(...values) * 1.02
-    const rangeVal = max - min
+    const minValue = Math.min(...values)
+    const maxValue = Math.max(...values)
+    const rangeVal = maxValue - minValue
+    const buffer = rangeVal * 0.1 || 1 // Add 10% buffer based on range, fallback to 1 if range is 0
+    const min = minValue - buffer
+    const max = maxValue + buffer
+    const adjustedRange = max - min
+    
     const innerWidth = width - padding.left - padding.right
     const innerHeight = height - padding.top - padding.bottom
     const xStep = innerWidth / (data.length - 1 || 1)
 
     const points = data.map((d, i) => ({
       x: padding.left + i * xStep,
-      y: padding.top + ((max - d.value) / rangeVal) * innerHeight,
+      y: padding.top + ((max - d.value) / adjustedRange) * innerHeight,
       date: d.date,
       value: d.value,
       index: i
     }))
 
     const labelIndices = []
-    const step = Math.max(1, Math.floor(data.length / 6))
+    // Increase step to reduce number of labels and prevent crowding
+    const step = Math.max(2, Math.floor(data.length / 5)) 
     for (let i = 0; i < data.length; i += step) labelIndices.push(i)
-    if (labelIndices[labelIndices.length - 1] !== data.length - 1) labelIndices.push(data.length - 1)
+    // Ensure the last data point is always labeled
+    if (labelIndices[labelIndices.length - 1] !== data.length - 1) {
+        // If the last label is too close to the second to last, remove the second to last
+        if (labelIndices.length > 1 && (data.length - 1 - labelIndices[labelIndices.length - 2]) < step / 2) {
+            labelIndices.splice(labelIndices.length - 2, 1)
+        }
+        labelIndices.push(data.length - 1)
+    }
 
     return { width, height, points, padding, linePath: points.map(p => `${p.x},${p.y}`).join(' '), min, max, labelIndices }
   }, [data])
@@ -124,18 +137,27 @@ function HistoryPage() {
                 {/* Y-axis & Grid */}
                 {[0, 0.25, 0.5, 0.75, 1].map(p => {
                   const val = chart.max - (p * (chart.max - chart.min))
-                  const y = chart.padding.top + (p * (chart.height - chart.padding.top - chart.padding.bottom))
+                  const y = Math.round(chart.padding.top + (p * (chart.height - chart.padding.top - chart.padding.bottom)))
                   return (
                     <g key={p}>
-                      <text x="70" y={y + 4} textAnchor="end" fill="var(--text-dim)" fontSize="12" fontWeight="600">{val.toFixed(1)}</text>
-                      <line x1="80" y1={y} x2={chart.width - chart.padding.right} y2={y} stroke="var(--border)" strokeDasharray="4" />
+                      <text x="70" y={y + 4} textAnchor="end" fill="var(--text-dim)" fontSize="12" fontWeight="600" style={{ fontFamily: 'Inter, sans-serif' }}>{val.toFixed(1)}</text>
+                      <line x1="80" y1={y} x2={chart.width - chart.padding.right} y2={y} stroke="var(--border)" strokeWidth="1" strokeDasharray="4" />
                     </g>
                   )
                 })}
 
                 {/* X-axis labels */}
                 {chart.labelIndices.map(idx => (
-                  <text key={idx} x={chart.points[idx].x} y={chart.height - 40} textAnchor="middle" fill="var(--text-dim)" fontSize="11" fontWeight="600">
+                  <text 
+                    key={idx} 
+                    x={Math.round(chart.points[idx].x)} 
+                    y={chart.height - 40} 
+                    textAnchor={idx === chart.labelIndices[chart.labelIndices.length - 1] ? 'end' : 'middle'} 
+                    fill="var(--text-dim)" 
+                    fontSize="11" 
+                    fontWeight="600"
+                    style={{ fontFamily: 'Inter, sans-serif' }}
+                  >
                     {data[idx].date.split('-').slice(1).join('/')}
                   </text>
                 ))}
