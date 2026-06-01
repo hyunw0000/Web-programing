@@ -18,7 +18,9 @@ function HistoryPage() {
     const fetchHistory = async () => {
       setLoading(true)
       try {
-        const res = await fetch(`${apiBaseUrl}/api/v1/history?symbol=${symbol}&days=${range}`)
+        // Add timestamp to query to prevent caching
+        const timestamp = new Date().getTime()
+        const res = await fetch(`${apiBaseUrl}/api/v1/history?symbol=${symbol}&days=${range}&t=${timestamp}`)
         const result = await res.json()
         setData(result.history || [])
       } catch (err) {
@@ -108,6 +110,10 @@ function HistoryPage() {
                      symbol === 'USDKRW' ? 'USD / KRW 환율' : 
                      symbol === 'DOMESTIC_GASOLINE_AVG' ? '국내 휘발유 평균' : symbol
 
+  const timeRanges = symbol === 'DOMESTIC_GASOLINE_AVG' 
+    ? [ { label: '1주', val: 7 }, { label: '1개월', val: 30 } ]
+    : [ { label: '1주', val: 7 }, { label: '1개월', val: 30 }, { label: '3개월', val: 90 } ]
+
   return (
     <div className="app-shell">
       <header className="dashboard-header">
@@ -123,7 +129,7 @@ function HistoryPage() {
         </div>
         <div className="header-actions">
           <div style={{ display: 'flex', background: 'var(--bg-card)', padding: '4px', borderRadius: '10px', border: '1px solid var(--border)' }}>
-            {[ { label: '1주', val: 7 }, { label: '1개월', val: 30 }, { label: '3개월', val: 90 } ].map(r => (
+            {timeRanges.map(r => (
               <button key={r.val} onClick={() => setRange(r.val)} style={{ padding: '8px 16px', borderRadius: '7px', border: 'none', fontSize: '0.85rem', fontWeight: 700, cursor: 'pointer', background: range === r.val ? 'var(--primary)' : 'transparent', color: range === r.val ? '#000' : 'var(--text-dim)', transition: 'all 0.2s' }}>
                 {r.label}
               </button>

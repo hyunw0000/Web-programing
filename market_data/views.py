@@ -1,3 +1,6 @@
+from datetime import timedelta, date
+from django.db.models import Max
+from django.db.models.functions import TruncDate
 import yfinance as yf
 from django.core.management import call_command
 from rest_framework.response import Response
@@ -83,6 +86,7 @@ class DashboardRefreshView(APIView):
 class HistoricalDataView(APIView):
     def get(self, request):
         symbol = request.query_params.get("symbol")
+        days_str = request.query_params.get("days")
         start_date = request.query_params.get("start_date")
         end_date = request.query_params.get("end_date")
         
@@ -94,23 +98,34 @@ class HistoricalDataView(APIView):
         if symbol in yf_mapping:
             try:
                 ticker = yf.Ticker(yf_mapping[symbol])
-                hist = ticker.history(start=start_date, end=end_date)
+                days = int(days_str) if days_str and days_str.isdigit() else 30
+                hist = ticker.history(period=f"{days}d")
                 results = [
                     {"date": index.strftime("%Y-%m-%d"), "value": round(float(row["Close"]), 2)}
                     for index, row in hist.iterrows()
                 ]
                 return Response({"symbol": symbol, "history": results})
-            except Exception:
+            except Exception as e:
+                print(f"Yahoo Finance Error: {e}")
                 pass
 
         # DB 필터링
         queryset = RawMarketData.objects.filter(symbol=symbol)
-        if start_date:
+        
+        if days_str and days_str.isdigit():
+            queryset = queryset.filter(observed_at__date__gte=date.today() - timedelta(days=int(days_str)))
+        elif start_date:
             queryset = queryset.filter(observed_at__date__gte=start_date)
+            
         if end_date:
             queryset = queryset.filter(observed_at__date__lte=end_date)
             
-        data = queryset.order_by("-observed_at")
-        results = [{"date": entry.observed_at.strftime("%Y-%m-%d"), "value": float(entry.value)} for entry in data]
+        # Group by date and get latest entry for each day
+        data = queryset.annotate(date=TruncDate('observed_at')).values('date').annotate(
+            latest_id=Max('id')
+        ).values_list('latest_id', flat=True)
+        
+        latest_entries = RawMarketData.objects.filter(id__in=data).order_by("-observed_at")
+        results = [{"date": entry.observed_at.strftime("%Y-%m-%d"), "value": float(entry.value)} for entry in latest_entries]
         
         return Response({"symbol": symbol, "history": results[::-1]})
