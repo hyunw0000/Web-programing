@@ -18,7 +18,9 @@ function HistoryPage() {
     const fetchHistory = async () => {
       setLoading(true)
       try {
-        const res = await fetch(`${apiBaseUrl}/api/v1/history?symbol=${symbol}&days=${range}`)
+        // Add timestamp to query to prevent caching
+        const timestamp = new Date().getTime()
+        const res = await fetch(`${apiBaseUrl}/api/v1/history?symbol=${symbol}&days=${range}&t=${timestamp}`)
         const result = await res.json()
         setData(result.history || [])
       } catch (err) {
@@ -30,34 +32,65 @@ function HistoryPage() {
     fetchHistory()
   }, [symbol, apiBaseUrl, range])
 
+  // Centralized deduplication logic
+  const uniqueData = useMemo(() => {
+    const seenDates = new Set();
+    return data.filter(d => {
+      if (seenDates.has(d.date)) return false;
+      seenDates.add(d.date);
+      return true;
+    });
+  }, [data]);
+
   const chart = useMemo(() => {
-    if (data.length === 0) return null
+    if (uniqueData.length === 0) return null
     const width = 1000
     const height = 400
     const padding = { top: 60, right: 50, bottom: 80, left: 80 }
-    const values = data.map(d => d.value)
-    const min = Math.min(...values) * 0.98
-    const max = Math.max(...values) * 1.02
-    const rangeVal = max - min
+    const values = uniqueData.map(d => d.value)
+    const minValue = Math.min(...values)
+    const maxValue = Math.max(...values)
+    const rangeVal = maxValue - minValue
+    const buffer = rangeVal * 0.1 || 1 // Add 10% buffer based on range, fallback to 1 if range is 0
+    const min = minValue - buffer
+    const max = maxValue + buffer
+    const adjustedRange = max - min
+    
     const innerWidth = width - padding.left - padding.right
     const innerHeight = height - padding.top - padding.bottom
-    const xStep = innerWidth / (data.length - 1 || 1)
+    const xStep = innerWidth / (uniqueData.length - 1 || 1)
 
-    const points = data.map((d, i) => ({
+    const points = uniqueData.map((d, i) => ({
       x: padding.left + i * xStep,
-      y: padding.top + ((max - d.value) / rangeVal) * innerHeight,
+      y: padding.top + ((max - d.value) / adjustedRange) * innerHeight,
       date: d.date,
       value: d.value,
       index: i
     }))
 
     const labelIndices = []
-    const step = Math.max(1, Math.floor(data.length / 6))
-    for (let i = 0; i < data.length; i += step) labelIndices.push(i)
-    if (labelIndices[labelIndices.length - 1] !== data.length - 1) labelIndices.push(data.length - 1)
+    // Dynamically calculate step to ensure labels fit (approx 6-8 labels max)
+    const maxLabels = 6;
+    const step = Math.max(1, Math.floor(uniqueData.length / maxLabels));
+    
+    for (let i = 0; i < uniqueData.length; i += step) {
+        // Only add if it's not too close to the last one
+        if (labelIndices.length === 0 || (i - labelIndices[labelIndices.length - 1]) >= step) {
+            labelIndices.push(i);
+        }
+    }
+    
+    // Ensure the last data point is included if not already
+    if (labelIndices[labelIndices.length - 1] !== uniqueData.length - 1) {
+        // If the last added is too close to the end, remove it to make room for the actual end label
+        if (uniqueData.length - 1 - labelIndices[labelIndices.length - 1] < step / 2) {
+            labelIndices.pop();
+        }
+        labelIndices.push(uniqueData.length - 1);
+    }
 
     return { width, height, points, padding, linePath: points.map(p => `${p.x},${p.y}`).join(' '), min, max, labelIndices }
-  }, [data])
+  }, [uniqueData])
 
   const handleMouseMove = (e) => {
     if (!chart || !svgRef.current) return
@@ -77,6 +110,10 @@ function HistoryPage() {
                      symbol === 'USDKRW' ? 'USD / KRW 환율' : 
                      symbol === 'DOMESTIC_GASOLINE_AVG' ? '국내 휘발유 평균' : symbol
 
+  const timeRanges = symbol === 'DOMESTIC_GASOLINE_AVG' 
+    ? [ { label: '1주', val: 7 }, { label: '1개월', val: 30 } ]
+    : [ { label: '1주', val: 7 }, { label: '1개월', val: 30 }, { label: '3개월', val: 90 } ]
+
   return (
     <div className="app-shell">
       <header className="dashboard-header">
@@ -92,7 +129,7 @@ function HistoryPage() {
         </div>
         <div className="header-actions">
           <div style={{ display: 'flex', background: 'var(--bg-card)', padding: '4px', borderRadius: '10px', border: '1px solid var(--border)' }}>
-            {[ { label: '1주', val: 7 }, { label: '1개월', val: 30 }, { label: '3개월', val: 90 } ].map(r => (
+            {timeRanges.map(r => (
               <button key={r.val} onClick={() => setRange(r.val)} style={{ padding: '8px 16px', borderRadius: '7px', border: 'none', fontSize: '0.85rem', fontWeight: 700, cursor: 'pointer', background: range === r.val ? 'var(--primary)' : 'transparent', color: range === r.val ? '#000' : 'var(--text-dim)', transition: 'all 0.2s' }}>
                 {r.label}
               </button>
@@ -124,18 +161,27 @@ function HistoryPage() {
                 {/* Y-axis & Grid */}
                 {[0, 0.25, 0.5, 0.75, 1].map(p => {
                   const val = chart.max - (p * (chart.max - chart.min))
-                  const y = chart.padding.top + (p * (chart.height - chart.padding.top - chart.padding.bottom))
+                  const y = Math.round(chart.padding.top + (p * (chart.height - chart.padding.top - chart.padding.bottom)))
                   return (
                     <g key={p}>
-                      <text x="70" y={y + 4} textAnchor="end" fill="var(--text-dim)" fontSize="12" fontWeight="600">{val.toFixed(1)}</text>
-                      <line x1="80" y1={y} x2={chart.width - chart.padding.right} y2={y} stroke="var(--border)" strokeDasharray="4" />
+                      <text x="70" y={y + 4} textAnchor="end" fill="var(--text-dim)" fontSize="12" fontWeight="600" style={{ fontFamily: 'Inter, sans-serif' }}>{val.toFixed(1)}</text>
+                      <line x1="80" y1={y} x2={chart.width - chart.padding.right} y2={y} stroke="var(--border)" strokeWidth="1" strokeDasharray="4" />
                     </g>
                   )
                 })}
 
-                {/* X-axis labels */}
+                    {/* X-axis labels */}
                 {chart.labelIndices.map(idx => (
-                  <text key={idx} x={chart.points[idx].x} y={chart.height - 40} textAnchor="middle" fill="var(--text-dim)" fontSize="11" fontWeight="600">
+                  <text 
+                    key={idx} 
+                    x={Math.round(chart.points[idx].x)} 
+                    y={chart.height - 40} 
+                    textAnchor={idx === chart.labelIndices[chart.labelIndices.length - 1] ? 'end' : 'middle'} 
+                    fill="var(--text-dim)" 
+                    fontSize="11" 
+                    fontWeight="600"
+                    style={{ fontFamily: 'Inter, sans-serif' }}
+                  >
                     {data[idx].date.split('-').slice(1).join('/')}
                   </text>
                 ))}
@@ -172,24 +218,38 @@ function HistoryPage() {
             <div className="table-container">
               <table>
                 <thead>
-                  <tr><th>날짜</th><th>수치</th><th>변동</th></tr>
+                  <tr>
+                    <th style={{ width: '30%' }}>날짜</th>
+                    <th style={{ width: '40%' }}>수치</th>
+                    <th style={{ width: '30%' }}>변동</th>
+                  </tr>
                 </thead>
                 <tbody>
-                  {data.slice().reverse().map((d, i, arr) => {
-                    const prev = arr[i + 1]
-                    const change = prev ? ((d.value - prev.value) / prev.value * 100).toFixed(2) : '0.00'
-                    const isUp = parseFloat(change) > 0
-                    return (
-                      <tr key={i} onMouseEnter={() => {
-                        const p = chart?.points.find(pt => pt.date === d.date)
-                        if (p) setHovererPoint(p)
-                      }} onMouseLeave={() => setHovererPoint(null)} style={{ background: hoveredPoint?.date === d.date ? 'rgba(56, 189, 248, 0.05)' : 'transparent', transition: 'background 0.2s' }}>
-                        <td className="text-dim" style={{ fontWeight: 600 }}>{d.date}</td>
-                        <td style={{ fontWeight: 800, fontSize: '1.1rem', color: '#fff' }}>{d.value.toLocaleString()}</td>
-                        <td style={{ color: isUp ? 'var(--danger)' : 'var(--success)', fontWeight: 800 }}>{isUp ? '▲' : '▼'} {Math.abs(change)}%</td>
-                      </tr>
-                    )
-                  })}
+                  {(() => {
+                    // Deduplicate by date
+                    const seenDates = new Set();
+                    const uniqueData = data.slice().reverse().filter(d => {
+                      if (seenDates.has(d.date)) return false;
+                      seenDates.add(d.date);
+                      return true;
+                    });
+                    
+                    return uniqueData.map((d, i, arr) => {
+                      const prev = arr[i + 1]
+                      const change = prev ? ((d.value - prev.value) / prev.value * 100).toFixed(2) : '0.00'
+                      const isUp = parseFloat(change) > 0
+                      return (
+                        <tr key={i} onMouseEnter={() => {
+                          const p = chart?.points.find(pt => pt.date === d.date)
+                          if (p) setHovererPoint(p)
+                        }} onMouseLeave={() => setHovererPoint(null)} style={{ background: hoveredPoint?.date === d.date ? 'rgba(56, 189, 248, 0.05)' : 'transparent', transition: 'background 0.2s' }}>
+                          <td className="text-dim" style={{ fontWeight: 600, whiteSpace: 'nowrap' }}>{d.date}</td>
+                          <td style={{ fontWeight: 800, fontSize: '1.1rem', color: '#fff' }}>{d.value.toLocaleString()}</td>
+                          <td style={{ color: isUp ? 'var(--danger)' : 'var(--success)', fontWeight: 800 }}>{isUp ? '▲' : '▼'} {Math.abs(change)}%</td>
+                        </tr>
+                      )
+                    })
+                  })()}
                 </tbody>
               </table>
             </div>

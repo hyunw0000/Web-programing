@@ -157,9 +157,6 @@ function Home() {
             <p style={{ fontSize: '1.125rem', color: 'var(--text-muted)', lineHeight: '1.6', marginBottom: '40px', maxWidth: '520px' }}>
               복잡한 지표 분석은 AI에게 맡기세요. 실시간 유가 데이터와 예측 모델을 통해 오늘 바로 실행 가능한 구매 전략을 제공합니다.
             </p>
-            <Link to="/dashboard" className="btn-primary" style={{ padding: '16px 40px', fontSize: '1rem', textDecoration: 'none' }}>
-              지금 무료로 체험하기
-            </Link>
           </div>
 
           <div 
@@ -223,7 +220,6 @@ function Home() {
         {/* Feature Grid */}
         <section id="value" style={{ marginBottom: '100px' }}>
           <div style={{ textAlign: 'center', marginBottom: '60px' }}>
-            <span className="home-kicker">Core Values</span>
             <h2 style={{ 
               fontSize: '3rem', 
               fontWeight: 900, 
@@ -236,7 +232,7 @@ function Home() {
               모든 판단은 데이터로 증명됩니다
             </h2>
           </div>
-          <div className="grid" style={{ gridTemplateColumns: 'repeat(3, 1fr)', gap: '24px' }}>
+          <div className="grid" style={{ gridTemplateColumns: 'repeat(3, 1fr)', gap: '24px', alignItems: 'start' }}>
             <FeatureCard 
               id="01 Analysis" 
               subtitle="정교한 예측 모델" 
