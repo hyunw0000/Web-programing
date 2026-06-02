@@ -11,6 +11,23 @@ from market_data.models import RawMarketData
 from market_data.services.gemini_client import is_configured, score_news_items
 
 
+POSITIVE_OIL_PRICE_KEYWORDS = [
+    "긴장",
+    "감산",
+    "공급 차질",
+    "제재",
+    "수요 증가",
+    "상승",
+]
+NEGATIVE_OIL_PRICE_KEYWORDS = [
+    "증산",
+    "공급 확대",
+    "리스크 완화",
+    "수요 둔화",
+    "하락",
+]
+
+
 @dataclass
 class MarketPoint:
     source: str
@@ -19,6 +36,20 @@ class MarketPoint:
     unit: str
     observed_at: datetime
     metadata: dict
+
+
+def _news_sentiment_score(title: str, description: str = "") -> int:
+    text = f"{title} {description}".lower()
+    score = 0
+
+    for keyword in POSITIVE_OIL_PRICE_KEYWORDS:
+        if keyword.lower() in text:
+            score += 1
+    for keyword in NEGATIVE_OIL_PRICE_KEYWORDS:
+        if keyword.lower() in text:
+            score -= 1
+
+    return score
 
 
 def _fetch_close_price(symbol: str) -> Optional[Decimal]:

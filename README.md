@@ -38,6 +38,7 @@
    - 오피넷 (`OPINET_API_KEY`)
    - 네이버 뉴스 (`NAVER_CLIENT_ID`, `NAVER_CLIENT_SECRET`) — 선택, 뉴스 감성용
    - **Gemini (`GEMINI_API_KEY`)** — AI 브리핑·뉴스 감성 분석
+   - **OpenAI (`OPENAI_API_KEY`)** — AI 채팅 Gemini 실패 시 fallback
 4. `.env.example`을 복사해 `.env` 작성
 
 ### Gemini AI 연동
@@ -47,10 +48,13 @@
 ```env
 GEMINI_API_KEY=your-gemini-api-key
 GEMINI_MODEL=gemini-2.0-flash
+OPENAI_API_KEY=your-openai-api-key
+OPENAI_MODEL=gpt-4o-mini
 ```
 
 - 브리핑 생성: `briefing/services/generator.py` → `market_data/services/gemini_client.py`
 - 뉴스 감성: `market_data/services/collectors.py` → Gemini 우선, 실패 시 키워드 fallback
+- AI 채팅: Gemini 우선, Gemini 미설정/실패 시 OpenAI fallback
 - API 키가 없으면 기존 규칙 기반 로직으로 동작
 
 데이터 생성:

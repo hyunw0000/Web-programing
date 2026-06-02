@@ -2,23 +2,49 @@ import json
 import logging
 import os
 import re
+from pathlib import Path
 from typing import Any, Dict, List, Optional
+
+import requests
+from dotenv import load_dotenv
 
 logger = logging.getLogger(__name__)
 
 DEFAULT_GEMINI_MODEL = "gemini-2.0-flash"
+DEFAULT_OPENAI_MODEL = "gpt-4o-mini"
+BASE_DIR = Path(__file__).resolve().parents[2]
+
+
+def _load_runtime_env() -> None:
+    load_dotenv(BASE_DIR / ".env", override=True)
 
 
 def get_api_key() -> str:
+    _load_runtime_env()
     return os.getenv("GEMINI_API_KEY", "").strip()
 
 
 def get_model_name() -> str:
+    _load_runtime_env()
     return os.getenv("GEMINI_MODEL", DEFAULT_GEMINI_MODEL).strip() or DEFAULT_GEMINI_MODEL
+
+
+def get_openai_api_key() -> str:
+    _load_runtime_env()
+    return os.getenv("OPENAI_API_KEY", "").strip()
+
+
+def get_openai_model_name() -> str:
+    _load_runtime_env()
+    return os.getenv("OPENAI_MODEL", DEFAULT_OPENAI_MODEL).strip() or DEFAULT_OPENAI_MODEL
 
 
 def is_configured() -> bool:
     return bool(get_api_key())
+
+
+def is_openai_configured() -> bool:
+    return bool(get_openai_api_key())
 
 
 def _get_model():
@@ -161,11 +187,8 @@ def generate_briefing(context: Dict[str, Any]) -> Optional[Dict[str, str]]:
         return None
 
 
-def chat_with_data(user_message: str, context: Dict[str, Any]) -> str:
-    if not is_configured():
-        return "Gemini API 키가 설정되지 않았습니다."
-
-    prompt = (
+def _chat_prompt(user_message: str, context: Dict[str, Any]) -> str:
+    return (
         "You are 'Oil Predict AI', a professional oil market assistant.\n"
         "Answer the user's question based on the provided market context.\n"
         "If the data is missing, answer based on your general knowledge but mention the lack of specific data.\n"
@@ -180,9 +203,61 @@ def chat_with_data(user_message: str, context: Dict[str, Any]) -> str:
         "AI:"
     )
 
+
+def _chat_with_openai(prompt: str) -> Optional[str]:
+    if not is_openai_configured():
+        return None
+
     try:
-        response = _get_model().generate_content(prompt)
-        return getattr(response, "text", "").strip() or "응답을 생성할 수 없습니다."
+        response = requests.post(
+            "https://api.openai.com/v1/responses",
+            headers={
+                "Authorization": f"Bearer {get_openai_api_key()}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "model": get_openai_model_name(),
+                "input": prompt,
+            },
+            timeout=30,
+        )
+        response.raise_for_status()
+        payload = response.json()
     except Exception as exc:
-        logger.error("Gemini chat failed: %s", exc)
-        return f"죄송합니다. 오류가 발생했습니다: {str(exc)}"
+        logger.error("OpenAI chat fallback failed: %s", exc)
+        return None
+
+    output_text = str(payload.get("output_text") or "").strip()
+    if output_text:
+        return output_text
+
+    output_parts = []
+    for item in payload.get("output", []) or []:
+        for content in item.get("content", []) or []:
+            if content.get("type") in {"output_text", "text"} and content.get("text"):
+                output_parts.append(str(content["text"]))
+
+    text = "\n".join(part.strip() for part in output_parts if part.strip()).strip()
+    return text or None
+
+
+def chat_with_data(user_message: str, context: Dict[str, Any]) -> str:
+    prompt = _chat_prompt(user_message, context)
+
+    if is_configured():
+        try:
+            response = _get_model().generate_content(prompt)
+            text = getattr(response, "text", "").strip()
+            if text:
+                return text
+            logger.warning("Gemini chat returned an empty response.")
+        except Exception as exc:
+            logger.error("Gemini chat failed: %s", exc)
+
+    openai_response = _chat_with_openai(prompt)
+    if openai_response:
+        return openai_response
+
+    if not is_configured() and not is_openai_configured():
+        return "Gemini 또는 OpenAI API 키가 설정되지 않았습니다."
+    return "응답을 생성할 수 없습니다."
