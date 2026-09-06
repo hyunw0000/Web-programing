@@ -15,14 +15,23 @@
 - AI 시장 브리핑 (상승/하락 요인 요약)
 - Smart Purchase Score (오늘/내일/관망)
 
-## 권장 기술 스택
+## 기술 스택
 
-- 백엔드: Python, Django, Django REST Framework
-- 데이터 수집: requests, APScheduler (초기), Celery (확장)
-- 데이터 저장: PostgreSQL (확장 시 TimescaleDB)
-- 프론트엔드: React 또는 Next.js
-- AI 분석: Gemini/ChatGPT API
-- 테스트: pytest, pytest-django
+| 분야 | 기술 |
+|---|---|
+| Backend | Python, Django, Django REST Framework |
+| 데이터 수집 | requests, APScheduler |
+| Database | PostgreSQL |
+| Frontend | React 19, React Router, Vite |
+| AI 분석 | Gemini API (기본), OpenAI API (fallback) |
+| 인프라 | Docker, Docker Compose |
+| 테스트 | pytest, pytest-django |
+
+## 👨‍💻 팀원
+
+- [@hyunw0000](https://github.com/hyunw0000)
+- [@sonchansoo](https://github.com/sonchansoo)
+- [@Choijinbum](https://github.com/Choijinbum)
 
 ## 문서
 
@@ -97,3 +106,7 @@ docker compose up --build
 - DB(PostgreSQL): `localhost:5432`
 
 환경변수(API 키)는 `docker compose` 실행 전에 shell 환경으로 주입하거나 `.env` 파일로 관리함.
+
+## 📮 문의
+
+GitHub: [@hyunw0000](https://github.com/hyunw0000)
